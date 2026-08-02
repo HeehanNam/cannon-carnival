@@ -3,7 +3,7 @@ extends Node3D
 enum GameState { READY, AIMING, PROJECTILE_ACTIVE, CHECKING, CLEAR, FAIL, PAUSED }
 
 const LEVEL_COUNT := 50
-const TEMPLATE_NAMES := ["중앙 타워", "쌍둥이 성", "회전 요새", "계단 피라미드", "블록 장벽"]
+const TEMPLATE_NAMES := ["중앙 타워", "쌍둥이 성", "회전 요새", "계단 피라미드", "블록 장벽", "공중 다리", "아치 관문", "나선 탑", "도미노 정원", "연금술 연구소"]
 const BLOCK_RED := Color("e62f43")
 const BLOCK_DARK := Color("a8142b")
 const CREAM := Color("fff0c2")
@@ -26,6 +26,7 @@ var camera: Camera3D
 var platform: AnimatableBody3D
 var platform_angle := 0.0
 var platform_rotation_speed := 0.0
+var platform_half_extents := Vector2(3.65, 2.55)
 var impact_started := false
 var clear_pending := false
 var moves_label: Label
@@ -218,10 +219,13 @@ func load_level(index: int) -> void:
 	platform_physics.friction = 1.0
 	platform_physics.rough = true
 	platform.physics_material_override = platform_physics
-	platform.add_child(mesh_box(Vector3(7.3, 0.55, 5.1), Color("623bc1")))
-	platform.add_child(shape_box(Vector3(7.3, 0.55, 5.1)))
+	var tier: int = int(level / 10)
+	var platform_size := Vector3(7.3 - tier * .22, 0.55, 5.1 - tier * .14)
+	platform_half_extents = Vector2(platform_size.x * .5, platform_size.z * .5)
+	platform.add_child(mesh_box(platform_size, Color("623bc1")))
+	platform.add_child(shape_box(platform_size))
 	stage_root.add_child(platform)
-	var trim := mesh_box(Vector3(7.45, .17, 5.25), Color("ffca22"))
+	var trim := mesh_box(platform_size + Vector3(.15, -.38, .15), Color("ffca22"))
 	trim.position.y = .35
 	platform.add_child(trim)
 
@@ -231,19 +235,19 @@ func load_level(index: int) -> void:
 
 func move_limit_for_level(level_index: int) -> int:
 	var tier: int = int(level_index / 10)
-	var template_bonus: int = 1 if level_index % 5 in [1, 2, 4] else 0
-	return max(6, 9 + template_bonus - int(tier / 2))
+	var template_bonus: int = 1 if level_index % 10 in [1, 2, 5, 6, 9] else 0
+	return max(5, 10 + template_bonus - tier)
 
 func rotation_speed_for_level(level_index: int) -> float:
 	if level_index < 5:
 		return 0.0
-	if level_index % 3 != 2 and level_index < 30:
+	if level_index % 4 not in [2, 3] and level_index < 30:
 		return 0.0
 	return 0.12 + float(int(level_index / 10)) * 0.035
 
 func generate_level_structure(level_index: int) -> void:
 	var tier: int = int(level_index / 10)
-	var template: int = level_index % 5
+	var template: int = level_index % 10
 	match template:
 		0:
 			build_tower(Vector3.ZERO, 3 + tier % 2, 3 + min(tier, 2))
@@ -258,6 +262,16 @@ func generate_level_structure(level_index: int) -> void:
 			build_pyramid(3 + min(tier, 2), tier)
 		4:
 			build_wall(4 + tier % 2, 3 + min(int(tier / 2), 1), tier)
+		5:
+			build_bridge(tier)
+		6:
+			build_arch(tier)
+		7:
+			build_spiral(tier)
+		8:
+			build_domino_garden(tier)
+		9:
+			build_laboratory(tier)
 
 func build_tower(offset: Vector3, columns: int, rows: int) -> void:
 	for y in range(rows):
@@ -292,11 +306,59 @@ func build_wall(columns: int, rows: int, tier: int) -> void:
 			var offset_x: float = .27 if y % 2 == 1 else 0.0
 			add_block(Vector3(px + offset_x, .775 + y, 0), Vector3(.82, 1.0, .82), y == rows - 1, tier >= 2 and (x + y) % 4 == 0)
 
-func add_block(pos: Vector3, size: Vector3, is_target: bool, heavy: bool) -> void:
+func build_bridge(tier: int) -> void:
+	var pillar_rows: int = 2 + mini(tier, 2)
+	for side in [-1.0, 1.0]:
+		for y in range(pillar_rows):
+			add_block(Vector3(side * 2.25, .775 + y, 0), Vector3(.88, 1.0, .88), y == pillar_rows - 1, tier >= 3 and y == 0, "stone" if y == 0 else "")
+	var bridge_y: float = float(pillar_rows) + .55
+	add_block(Vector3(0, bridge_y, 0), Vector3(4.25, .55, .8), true, false, "wood")
+	for x in [-1.35, 0.0, 1.35]:
+		add_block(Vector3(x, bridge_y + .8, 0), Vector3(.68, .9, .68), x == 0, false, "glass" if x != 0 else "ice")
+
+func build_arch(tier: int) -> void:
+	var height: int = 3 + mini(int(tier / 2), 1)
+	for side in [-1.0, 1.0]:
+		for y in range(height):
+			add_block(Vector3(side * 1.65, .775 + y, 0), Vector3(.85, 1.0, .85), y == height - 1, tier >= 3 and y == 0, "stone" if y == 0 else "")
+	add_block(Vector3(0, float(height) + .55, 0), Vector3(3.8, .55, .8), true, false, "wood")
+	add_block(Vector3(0, float(height) + 1.25, 0), Vector3(.72, .82, .72), true, false, "glass")
+	if tier >= 2:
+		add_block(Vector3(-2.7, .775, 0), Vector3(.75, 1.0, .75), false, false, "ice")
+		add_block(Vector3(2.7, .775, 0), Vector3(.75, 1.0, .75), false, false, "ice")
+
+func build_spiral(tier: int) -> void:
+	var count: int = 10 + tier * 2
+	for i in range(count):
+		var angle: float = float(i) * .72
+		var radius: float = 1.75 - min(float(i) * .035, .55)
+		var block_type := "ice" if i % 5 == 2 and tier >= 1 else ""
+		add_block(Vector3(cos(angle) * radius, .775 + i * .32, sin(angle) * radius), Vector3(.7, .72, .7), i >= count - 2, tier >= 4 and i % 6 == 0, block_type)
+
+func build_domino_garden(tier: int) -> void:
+	var count: int = 11 + tier * 2
+	for i in range(count):
+		var progress: float = float(i) / maxf(1.0, float(count - 1))
+		var x: float = lerp(-2.8, 2.8, progress)
+		var z: float = sin(progress * TAU * 1.5) * 1.15
+		var kind := "explosive" if tier >= 2 and i == int(count / 2) else ("ice" if i % 5 == 0 else "wood")
+		add_block(Vector3(x, .875, z), Vector3(.42, 1.2, .72), i % 4 == 0, false, kind)
+
+func build_laboratory(tier: int) -> void:
+	for x in [-2.2, 0.0, 2.2]:
+		add_block(Vector3(x, .725, 0), Vector3(.7, .9, .7), true, false, "glass")
+		add_block(Vector3(x, 1.65, 0), Vector3(.82, .9, .82), false, false, "ice")
+	add_block(Vector3(0, 2.4, 0), Vector3(5.3, .5, .75), true, tier >= 4, "stone" if tier >= 3 else "wood")
+	for x in [-1.5, 0.0, 1.5]:
+		var kind := "explosive" if tier >= 2 and x == 0.0 else "glass"
+		add_block(Vector3(x, 3.05, 0), Vector3(.68, .8, .68), true, false, kind)
+
+func add_block(pos: Vector3, size: Vector3, is_target: bool, heavy: bool, requested_type := "") -> void:
 	var body := RigidBody3D.new()
 	body.set_script(BLOCK_SCRIPT)
 	body.position = pos + Vector3(0, 0, -1.0)
-	body.mass = 2.6 if heavy else 1.0
+	var block_type: String = requested_type if requested_type != "" else choose_block_type(pos, heavy)
+	body.mass = block_mass(block_type)
 	var block_physics := PhysicsMaterial.new()
 	block_physics.friction = 1.0
 	block_physics.rough = true
@@ -304,17 +366,11 @@ func add_block(pos: Vector3, size: Vector3, is_target: bool, heavy: bool) -> voi
 	body.set_meta("target", is_target)
 	body.set_meta("counted", false)
 	body.set_meta("value", 200 if is_target else 100)
+	body.set_meta("block_type", block_type)
+	body.set_meta("durability", 2 if block_type == "ice" else 1)
 	body.add_to_group("blocks")
 	blocks_left += 1
-	var color := Color("702f9e") if heavy else BLOCK_RED
-	body.add_child(mesh_cylinder(size.x * .5, size.y, color))
-	body.add_child(shape_cylinder(size.x * .5, size.y))
-	var stripe := mesh_cylinder(size.x * .515, size.y * .13, CREAM)
-	stripe.position.y = size.y * .17
-	body.add_child(stripe)
-	var stripe2 := mesh_cylinder(size.x * .515, size.y * .10, CREAM)
-	stripe2.position.y = -size.y * .28
-	body.add_child(stripe2)
+	build_block_visual(body, size, block_type)
 	if is_target:
 		var crown := mesh_sphere(size.x * .2, Color("ffd62f"))
 		crown.scale.y = .45
@@ -322,6 +378,66 @@ func add_block(pos: Vector3, size: Vector3, is_target: bool, heavy: bool) -> voi
 		body.add_child(crown)
 		targets_left += 1
 	stage_root.add_child(body)
+
+func choose_block_type(pos: Vector3, heavy: bool) -> String:
+	if heavy: return "stone"
+	var key: int = abs(int(pos.x * 31.0) + int(pos.y * 17.0) + level * 13)
+	if level >= 24 and key % 19 == 0: return "explosive"
+	if level >= 12 and key % 11 == 0: return "ice"
+	if level >= 7 and key % 13 == 0: return "glass"
+	if level >= 4 and key % 5 == 0: return "wood"
+	return "barrel"
+
+func block_mass(block_type: String) -> float:
+	match block_type:
+		"glass": return .55
+		"ice": return .8
+		"wood": return .9
+		"stone": return 3.2
+		"explosive": return 1.1
+		_: return 1.0
+
+func build_block_visual(body: RigidBody3D, size: Vector3, block_type: String) -> void:
+	match block_type:
+		"glass":
+			body.add_child(mesh_transparent_cylinder(size.x * .43, size.y * .72, Color(0.55, .95, 1.0, .42)))
+			body.add_child(shape_cylinder(size.x * .43, size.y))
+			var liquid := mesh_transparent_cylinder(size.x * .32, size.y * .36, Color(.72, .22, 1.0, .82))
+			liquid.position.y = -size.y * .15
+			body.add_child(liquid)
+			var neck := mesh_transparent_cylinder(size.x * .19, size.y * .28, Color(.72, 1.0, 1.0, .5))
+			neck.position.y = size.y * .47
+			body.add_child(neck)
+		"ice":
+			body.add_child(mesh_transparent_box(size, Color(.38, .88, 1.0, .72)))
+			body.add_child(shape_box(size))
+			var core := mesh_box(size * .62, Color("dffaff"))
+			body.add_child(core)
+		"wood":
+			body.add_child(mesh_box(size, Color("b96b32")))
+			body.add_child(shape_box(size))
+			var band := mesh_box(Vector3(size.x * 1.02, size.y * .13, size.z * 1.02), Color("f2b85b"))
+			body.add_child(band)
+		"stone":
+			body.add_child(mesh_box(size, Color("68748c")))
+			body.add_child(shape_box(size))
+			var inset := mesh_box(size * .72, Color("8995aa"))
+			inset.position.z = size.z * .15
+			body.add_child(inset)
+		"explosive":
+			body.add_child(mesh_cylinder(size.x * .5, size.y, Color("29283e")))
+			body.add_child(shape_cylinder(size.x * .5, size.y))
+			var warning := mesh_cylinder(size.x * .515, size.y * .22, Color("ffd322"))
+			body.add_child(warning)
+		_:
+			body.add_child(mesh_cylinder(size.x * .5, size.y, BLOCK_RED))
+			body.add_child(shape_cylinder(size.x * .5, size.y))
+			var stripe := mesh_cylinder(size.x * .515, size.y * .13, CREAM)
+			stripe.position.y = size.y * .17
+			body.add_child(stripe)
+			var stripe2 := mesh_cylinder(size.x * .515, size.y * .10, CREAM)
+			stripe2.position.y = -size.y * .28
+			body.add_child(stripe2)
 
 func fire_at(target: Vector3) -> void:
 	if state not in [GameState.READY, GameState.AIMING, GameState.PROJECTILE_ACTIVE] or moves <= 0: return
@@ -351,8 +467,8 @@ func fire_at(target: Vector3) -> void:
 	hint_label.text = "선택한 지점으로 발사했습니다"
 
 func on_projectile_hit(body: Node, source_projectile: RigidBody3D) -> void:
-	shake_amount = max(shake_amount, .24)
-	flash.color.a = .22
+	shake_amount = max(shake_amount, .34)
+	flash.color.a = .28
 	if not impact_started:
 		impact_started = true
 		# Once the first real collision happens, gravity applies to the full tower.
@@ -361,8 +477,63 @@ func on_projectile_hit(body: Node, source_projectile: RigidBody3D) -> void:
 			if is_instance_valid(block) and block.has_method("activate_physics"):
 				block.activate_physics()
 	if body.has_method("activate_physics"):
-		var impulse := source_projectile.linear_velocity.normalized() * 10.5 if is_instance_valid(source_projectile) else Vector3.ZERO
+		var impulse := source_projectile.linear_velocity.normalized() * 12.5 if is_instance_valid(source_projectile) else Vector3.ZERO
 		body.activate_physics(impulse)
+	if not body.is_in_group("blocks"):
+		return
+	var block_type: String = str(body.get_meta("block_type", "barrel"))
+	if block_type == "glass":
+		destroy_special_block(body, Color(.55, .95, 1.0, .78), 16)
+	elif block_type == "ice":
+		var durability: int = int(body.get_meta("durability", 2)) - 1
+		body.set_meta("durability", durability)
+		spawn_shards(body.global_position, Color(.45, .9, 1.0, .8), 7)
+		if durability <= 0:
+			destroy_special_block(body, Color(.72, .96, 1.0, .9), 15)
+	elif block_type == "explosive":
+		explode_block(body)
+
+func destroy_special_block(body: Node, shard_color: Color, shard_count: int) -> void:
+	if not is_instance_valid(body): return
+	var body_3d := body as Node3D
+	if body_3d == null: return
+	spawn_shards(body_3d.global_position, shard_color, shard_count)
+	if not body.get_meta("counted", false):
+		body.set_meta("counted", true)
+		blocks_left = maxi(0, blocks_left - 1)
+		score += int(body.get_meta("value", 100))
+		update_hud()
+	body.queue_free()
+
+func explode_block(body: Node) -> void:
+	var source := body as Node3D
+	if source == null: return
+	var blast_origin: Vector3 = source.global_position
+	destroy_special_block(body, Color("ffcf32"), 20)
+	shake_amount = .65
+	flash.color.a = .55
+	for candidate in get_tree().get_nodes_in_group("blocks"):
+		var nearby := candidate as RigidBody3D
+		if nearby == null or nearby == body: continue
+		var offset: Vector3 = nearby.global_position - blast_origin
+		var distance: float = offset.length()
+		if distance < 3.2 and nearby.has_method("activate_physics"):
+			var strength: float = lerp(13.0, 3.0, distance / 3.2)
+			nearby.activate_physics(offset.normalized() * strength + Vector3.UP * 2.5)
+
+func spawn_shards(origin: Vector3, shard_color: Color, amount: int) -> void:
+	for i in range(amount):
+		var shard := RigidBody3D.new()
+		shard.mass = .04
+		shard.collision_layer = 0
+		shard.collision_mask = 0
+		shard.position = origin + Vector3(randf_range(-.18, .18), randf_range(-.2, .2), randf_range(-.18, .18))
+		var shard_size := Vector3(randf_range(.06, .16), randf_range(.05, .19), randf_range(.04, .12))
+		shard.add_child(mesh_transparent_box(shard_size, shard_color))
+		add_child(shard)
+		shard.linear_velocity = Vector3(randf_range(-4.5, 4.5), randf_range(2.0, 7.0), randf_range(-4.0, 4.0))
+		shard.angular_velocity = Vector3(randf_range(-12.0, 12.0), randf_range(-12.0, 12.0), randf_range(-12.0, 12.0))
+		get_tree().create_timer(1.4).timeout.connect(shard.queue_free)
 
 func _physics_process(delta: float) -> void:
 	if state == GameState.PAUSED: return
@@ -548,14 +719,31 @@ func material(color: Color) -> StandardMaterial3D:
 	mat.roughness = .72
 	return mat
 
+func transparent_material(color: Color) -> StandardMaterial3D:
+	var mat := StandardMaterial3D.new()
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.albedo_color = color
+	mat.roughness = .18
+	mat.metallic = .08
+	return mat
+
 func mesh_box(size: Vector3, color: Color) -> MeshInstance3D:
 	var node := MeshInstance3D.new(); var mesh := BoxMesh.new()
 	mesh.size = size; mesh.material = material(color); node.mesh = mesh; return node
+
+func mesh_transparent_box(size: Vector3, color: Color) -> MeshInstance3D:
+	var node := MeshInstance3D.new(); var mesh := BoxMesh.new()
+	mesh.size = size; mesh.material = transparent_material(color); node.mesh = mesh; return node
 
 func mesh_cylinder(radius: float, height: float, color: Color) -> MeshInstance3D:
 	var node := MeshInstance3D.new(); var mesh := CylinderMesh.new()
 	mesh.top_radius = radius; mesh.bottom_radius = radius; mesh.height = height
 	mesh.radial_segments = 20; mesh.material = material(color); node.mesh = mesh; return node
+
+func mesh_transparent_cylinder(radius: float, height: float, color: Color) -> MeshInstance3D:
+	var node := MeshInstance3D.new(); var mesh := CylinderMesh.new()
+	mesh.top_radius = radius; mesh.bottom_radius = radius; mesh.height = height
+	mesh.radial_segments = 20; mesh.material = transparent_material(color); node.mesh = mesh; return node
 
 func mesh_sphere(radius: float, color: Color) -> MeshInstance3D:
 	var node := MeshInstance3D.new(); var mesh := SphereMesh.new()
