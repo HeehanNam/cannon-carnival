@@ -24,6 +24,7 @@ var barrel_pivot: Node3D
 var camera: Camera3D
 var platform: AnimatableBody3D
 var platform_angle := 0.0
+var impact_started := false
 var moves_label: Label
 var target_label: Label
 var level_label: Label
@@ -148,7 +149,7 @@ func build_ui() -> void:
 	pause.pressed.connect(toggle_pause)
 	ui.add_child(pause)
 
-	hint_label = make_label("쓰러뜨릴 블록을 선택하세요", 19, Color.WHITE)
+	hint_label = make_label("화면을 터치해 발사하세요", 19, Color.WHITE)
 	hint_label.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
 	hint_label.position = Vector2(-185, -174)
 	hint_label.size = Vector2(370, 42)
@@ -196,6 +197,7 @@ func load_level(index: int) -> void:
 	targets_left = 0
 	state = GameState.READY
 	projectile = null
+	impact_started = false
 	overlay.visible = false
 	cannon_yaw = 0.0
 	cannon_pitch = deg_to_rad(14)
@@ -214,25 +216,25 @@ func load_level(index: int) -> void:
 	elif level == 1:
 		build_tower(Vector3(-1.7, 0, 0), 2, 3)
 		build_tower(Vector3(1.7, 0, 0), 2, 3)
-		add_block(Vector3(0, 3.75, 0), Vector3(3.6, .55, .75), true, false)
+		add_block(Vector3(0, 3.55, 0), Vector3(3.6, .55, .75), true, false)
 	else:
 		build_fortress()
 	update_hud()
-	hint_label.text = STAGE_NAMES[level] + " · 타워를 터치하세요"
+	hint_label.text = STAGE_NAMES[level] + " · 화면을 터치하세요"
 
 func build_tower(offset: Vector3, columns: int, rows: int) -> void:
 	for y in range(rows):
 		for x in range(columns):
 			var px := (x - (columns - 1) * .5) * 1.18
 			var target := y == rows - 1 or (y == 1 and x == columns / 2)
-			add_block(offset + Vector3(px, .65 + y * 1.12, 0), Vector3(.82, 1.0, .82), target, (x + y) % 4 == 0)
+			add_block(offset + Vector3(px, .775 + y * 1.0, 0), Vector3(.82, 1.0, .82), target, (x + y) % 4 == 0)
 
 func build_fortress() -> void:
-	for x in [-2.25, -1.12, 0.0, 1.12, 2.25]: add_block(Vector3(x, .65, 0), Vector3(.82, 1.0, .82), x == 0, false)
-	for x in [-2.0, 0.0, 2.0]: add_block(Vector3(x, 1.8, 0), Vector3(.9, 1.0, .9), true, x != 0)
-	add_block(Vector3(-1.0, 2.85, 0), Vector3(2.7, .45, .75), false, false)
-	add_block(Vector3(1.0, 2.85, 0), Vector3(2.7, .45, .75), false, false)
-	add_block(Vector3(0, 3.7, 0), Vector3(.9, 1.0, .9), true, false)
+	for x in [-2.25, -1.12, 0.0, 1.12, 2.25]: add_block(Vector3(x, .775, 0), Vector3(.82, 1.0, .82), x == 0, false)
+	for x in [-2.0, 0.0, 2.0]: add_block(Vector3(x, 1.775, 0), Vector3(.9, 1.0, .9), true, x != 0)
+	add_block(Vector3(-1.0, 2.5, 0), Vector3(2.7, .45, .75), false, false)
+	add_block(Vector3(1.0, 2.5, 0), Vector3(2.7, .45, .75), false, false)
+	add_block(Vector3(0, 3.225, 0), Vector3(.9, 1.0, .9), true, false)
 
 func add_block(pos: Vector3, size: Vector3, is_target: bool, heavy: bool) -> void:
 	var body := RigidBody3D.new()
@@ -290,6 +292,13 @@ func fire_at(target: Vector3) -> void:
 func on_projectile_hit(body: Node) -> void:
 	shake_amount = max(shake_amount, .24)
 	flash.color.a = .22
+	if not impact_started:
+		impact_started = true
+		# Once the first real collision happens, gravity applies to the full tower.
+		# Only the directly hit block receives the projectile impulse.
+		for block in get_tree().get_nodes_in_group("blocks"):
+			if is_instance_valid(block) and block.has_method("activate_physics"):
+				block.activate_physics()
 	if body.has_method("activate_physics"):
 		var impulse := projectile.linear_velocity.normalized() * 10.5 if is_instance_valid(projectile) else Vector3.ZERO
 		body.activate_physics(impulse)
@@ -329,7 +338,7 @@ func finish_check() -> void:
 	elif moves <= 0: fail_stage()
 	else:
 		state = GameState.READY
-		hint_label.text = "남은 타깃 블록을 선택하세요"
+		hint_label.text = "화면을 터치해 다시 발사하세요"
 
 func clear_stage() -> void:
 	if state == GameState.CLEAR: return
@@ -364,7 +373,7 @@ func toggle_pause() -> void:
 		overlay_button.text = "계속하기"
 		overlay.visible = true
 
-func _unhandled_input(event: InputEvent) -> void:
+func _input(event: InputEvent) -> void:
 	if state not in [GameState.READY, GameState.AIMING]: return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 		select_tower_point(event.position)
@@ -373,17 +382,21 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func select_tower_point(screen_position: Vector2) -> void:
 	var ray_origin := camera.project_ray_origin(screen_position)
-	var ray_end := ray_origin + camera.project_ray_normal(screen_position) * 100.0
+	var ray_direction := camera.project_ray_normal(screen_position)
+	var ray_end := ray_origin + ray_direction * 100.0
 	var query := PhysicsRayQueryParameters3D.create(ray_origin, ray_end)
 	query.collide_with_areas = false
 	var hit := get_world_3d().direct_space_state.intersect_ray(query)
-	if hit.is_empty():
-		return
-	var collider: Object = hit["collider"]
-	if collider is Node and (collider as Node).is_in_group("blocks"):
+	if not hit.is_empty():
 		fire_at(hit["position"])
-	else:
-		hint_label.text = "타워 블록을 정확히 선택하세요"
+		return
+	# Sky taps still produce a shot: project the tap onto the tower's depth plane.
+	var target := ray_origin + ray_direction * 18.0
+	if abs(ray_direction.z) > 0.001:
+		var distance_to_tower_plane := (-1.0 - ray_origin.z) / ray_direction.z
+		if distance_to_tower_plane > 0.0:
+			target = ray_origin + ray_direction * distance_to_tower_plane
+	fire_at(target)
 
 func update_cannon() -> void:
 	if not cannon_pivot: return
