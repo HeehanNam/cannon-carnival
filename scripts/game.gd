@@ -324,10 +324,12 @@ func _physics_process(delta: float) -> void:
 			var rotation_center := platform.global_position
 			for block in get_tree().get_nodes_in_group("blocks"):
 				if not is_instance_valid(block): continue
-				var relative := block.global_position - rotation_center
+				var block_body: RigidBody3D = block as RigidBody3D
+				if block_body == null: continue
+				var relative: Vector3 = block_body.global_position - rotation_center
 				relative = relative.rotated(Vector3.UP, angle_delta)
-				block.global_position = rotation_center + relative
-				block.rotate_y(angle_delta)
+				block_body.global_position = rotation_center + relative
+				block_body.rotate_y(angle_delta)
 	check_dropped_blocks()
 	if projectile and is_instance_valid(projectile):
 		projectile_timer += delta
