@@ -39,6 +39,18 @@ func _run() -> void:
 		push_error("Glass block did not break and update remaining count")
 		quit(1)
 		return
+	if game.shake_amount > .12:
+		push_error("Impact camera shake exceeds the comfort limit")
+		quit(1)
+		return
+	var theme_colors := {}
+	for themed_level in [0, 10, 20, 30, 40]:
+		game.load_level(themed_level)
+		theme_colors[game.environment_data.background_color.to_html()] = true
+	if theme_colors.size() != 5:
+		push_error("The five level themes do not use distinct sky colors")
+		quit(1)
+		return
 	game.load_level(7)
 	await physics_frame
 	for candidate in get_nodes_in_group("blocks"):

@@ -8,6 +8,10 @@ const BLOCK_RED := Color("e62f43")
 const BLOCK_DARK := Color("a8142b")
 const CREAM := Color("fff0c2")
 const BLOCK_SCRIPT := preload("res://scripts/physics_block.gd")
+const THEME_NAMES := ["햇살 공원", "산호 해변", "캔디 정원", "눈꽃 마을", "별빛 공원"]
+const SKY_COLORS := [Color("37aef6"), Color("48cfe8"), Color("a978ed"), Color("9bd8f5"), Color("172654")]
+const GROUND_COLORS := [Color("62ba24"), Color("f2cf72"), Color("f093c3"), Color("dbeff5"), Color("35406f")]
+const FOLIAGE_COLORS := [Color("64d83d"), Color("26c5a4"), Color("ff75bd"), Color("b7e7ef"), Color("7656c7")]
 
 var state := GameState.READY
 var level := 0
@@ -23,6 +27,9 @@ var stage_root: Node3D
 var cannon_pivot: Node3D
 var barrel_pivot: Node3D
 var camera: Camera3D
+var environment_data: Environment
+var ground_visual: MeshInstance3D
+var tree_crowns: Array[MeshInstance3D] = []
 var platform: AnimatableBody3D
 var platform_angle := 0.0
 var platform_rotation_speed := 0.0
@@ -39,6 +46,7 @@ var overlay_body: Label
 var overlay_button: Button
 var flash: ColorRect
 var shake_amount := 0.0
+var shake_phase := 0.0
 
 func _ready() -> void:
 	build_environment()
@@ -47,14 +55,14 @@ func _ready() -> void:
 
 func build_environment() -> void:
 	var world := WorldEnvironment.new()
-	var env := Environment.new()
-	env.background_mode = Environment.BG_COLOR
-	env.background_color = Color("37aef6")
-	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color("dff6ff")
-	env.ambient_light_energy = 0.85
-	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
-	world.environment = env
+	environment_data = Environment.new()
+	environment_data.background_mode = Environment.BG_COLOR
+	environment_data.background_color = SKY_COLORS[0]
+	environment_data.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	environment_data.ambient_light_color = Color("dff6ff")
+	environment_data.ambient_light_energy = 0.85
+	environment_data.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+	world.environment = environment_data
 	add_child(world)
 
 	var sun := DirectionalLight3D.new()
@@ -72,7 +80,8 @@ func build_environment() -> void:
 	# Sunny park ground.
 	var ground := StaticBody3D.new()
 	ground.position = Vector3(0, -1.0, 0)
-	ground.add_child(mesh_box(Vector3(36, 0.5, 36), Color("62ba24")))
+	ground_visual = mesh_box(Vector3(36, 0.5, 36), GROUND_COLORS[0])
+	ground.add_child(ground_visual)
 	ground.add_child(shape_box(Vector3(36, 0.5, 36)))
 	add_child(ground)
 	# Keep the entire firing lane clear. Decorations live behind the target only.
@@ -85,6 +94,7 @@ func build_environment() -> void:
 		var crown := mesh_sphere(0.75, Color.from_hsv(0.28 + (i % 3) * .02, .72, .65 + (i % 2) * .12))
 		crown.position.y = 1.0
 		tree.add_child(crown)
+		tree_crowns.append(crown)
 		add_child(tree)
 
 	stage_root = Node3D.new()
@@ -197,6 +207,7 @@ func build_ui() -> void:
 
 func load_level(index: int) -> void:
 	level = posmod(index, LEVEL_COUNT)
+	apply_level_theme(level)
 	for child in stage_root.get_children(): child.queue_free()
 	moves = move_limit_for_level(level)
 	score = 0
@@ -231,7 +242,22 @@ func load_level(index: int) -> void:
 
 	generate_level_structure(level)
 	update_hud()
-	hint_label.text = TEMPLATE_NAMES[level % TEMPLATE_NAMES.size()] + " · 화면을 터치하세요"
+	hint_label.text = THEME_NAMES[int(level / 10)] + " · " + TEMPLATE_NAMES[level % TEMPLATE_NAMES.size()]
+
+func apply_level_theme(level_index: int) -> void:
+	var theme_index: int = clampi(int(level_index / 10), 0, SKY_COLORS.size() - 1)
+	if environment_data:
+		environment_data.background_color = SKY_COLORS[theme_index]
+		environment_data.ambient_light_color = SKY_COLORS[theme_index].lightened(.58)
+	if ground_visual and ground_visual.mesh:
+		ground_visual.mesh.material = material(GROUND_COLORS[theme_index])
+	for i in range(tree_crowns.size()):
+		var crown := tree_crowns[i]
+		if crown and crown.mesh:
+			var variation: float = float(i % 3) * .055 - .055
+			var foliage: Color = FOLIAGE_COLORS[theme_index]
+			foliage = foliage.lightened(variation) if variation >= 0.0 else foliage.darkened(-variation)
+			crown.mesh.material = material(foliage)
 
 func move_limit_for_level(level_index: int) -> int:
 	var tier: int = int(level_index / 10)
@@ -403,6 +429,8 @@ func block_mass(block_type: String) -> float:
 		_: return 1.0
 
 func build_block_visual(body: RigidBody3D, size: Vector3, block_type: String) -> void:
+	var accent: Color = level_block_color(0.0)
+	var secondary: Color = level_block_color(.09)
 	match block_type:
 		"glass":
 			body.add_child(mesh_transparent_cylinder(size.x * .43, size.y * .72, Color(0.55, .95, 1.0, .42)))
@@ -419,23 +447,23 @@ func build_block_visual(body: RigidBody3D, size: Vector3, block_type: String) ->
 			var core := mesh_box(size * .62, Color("dffaff"))
 			body.add_child(core)
 		"wood":
-			body.add_child(mesh_box(size, Color("b96b32")))
+			body.add_child(mesh_box(size, Color("b96b32").lerp(accent, .18)))
 			body.add_child(shape_box(size))
 			var band := mesh_box(Vector3(size.x * 1.02, size.y * .13, size.z * 1.02), Color("f2b85b"))
 			body.add_child(band)
 		"stone":
-			body.add_child(mesh_box(size, Color("68748c")))
+			body.add_child(mesh_box(size, Color("68748c").lerp(secondary, .22)))
 			body.add_child(shape_box(size))
 			var inset := mesh_box(size * .72, Color("8995aa"))
 			inset.position.z = size.z * .15
 			body.add_child(inset)
 		"explosive":
-			body.add_child(mesh_cylinder(size.x * .5, size.y, Color("29283e")))
+			body.add_child(mesh_cylinder(size.x * .5, size.y, Color("29283e").lerp(accent, .2)))
 			body.add_child(shape_cylinder(size.x * .5, size.y))
 			var warning := mesh_cylinder(size.x * .515, size.y * .22, Color("ffd322"))
 			body.add_child(warning)
 		_:
-			body.add_child(mesh_cylinder(size.x * .5, size.y, BLOCK_RED))
+			body.add_child(mesh_cylinder(size.x * .5, size.y, accent))
 			body.add_child(shape_cylinder(size.x * .5, size.y))
 			var stripe := mesh_cylinder(size.x * .515, size.y * .13, CREAM)
 			stripe.position.y = size.y * .17
@@ -443,6 +471,12 @@ func build_block_visual(body: RigidBody3D, size: Vector3, block_type: String) ->
 			var stripe2 := mesh_cylinder(size.x * .515, size.y * .10, CREAM)
 			stripe2.position.y = -size.y * .28
 			body.add_child(stripe2)
+
+func level_block_color(hue_offset: float) -> Color:
+	var theme_index: int = clampi(int(level / 10), 0, 4)
+	var base_hues: Array[float] = [.97, .05, .88, .53, .66]
+	var hue: float = fmod(base_hues[theme_index] + hue_offset + float(level % 10) * .018, 1.0)
+	return Color.from_hsv(hue, .72 if theme_index != 3 else .48, .94)
 
 func fire_at(target: Vector3) -> void:
 	if state not in [GameState.READY, GameState.AIMING, GameState.PROJECTILE_ACTIVE, GameState.CHECKING] or moves <= 0: return
@@ -466,14 +500,16 @@ func fire_at(target: Vector3) -> void:
 	projectile.max_contacts_reported = 8
 	projectile.body_entered.connect(on_projectile_hit.bind(projectile))
 	add_child(projectile)
-	shake_amount = .18
-	flash.color.a = .4
+	shake_amount = max(shake_amount, .025)
+	flash.color.a = .10
 	update_hud()
 	hint_label.text = "선택한 지점으로 발사했습니다"
 
 func on_projectile_hit(body: Node, source_projectile: RigidBody3D) -> void:
-	shake_amount = max(shake_amount, .34)
-	flash.color.a = .28
+	shake_amount = max(shake_amount, .055)
+	flash.color.a = .14
+	if body is Node3D:
+		spawn_shards((body as Node3D).global_position, level_block_color(.08), 5)
 	if not impact_started:
 		impact_started = true
 		# Once the first real collision happens, gravity applies to the full tower.
@@ -515,8 +551,8 @@ func explode_block(body: Node) -> void:
 	if source == null: return
 	var blast_origin: Vector3 = source.global_position
 	destroy_special_block(body, Color("ffcf32"), 20)
-	shake_amount = .65
-	flash.color.a = .55
+	shake_amount = .11
+	flash.color.a = .26
 	for candidate in get_tree().get_nodes_in_group("blocks"):
 		var nearby := candidate as RigidBody3D
 		if nearby == null or nearby == body: continue
@@ -564,11 +600,12 @@ func _physics_process(delta: float) -> void:
 		if state == GameState.PROJECTILE_ACTIVE and (projectile_timer > 5.5 or projectile.position.y < -3.0 or projectile.linear_velocity.length() < .18 and projectile_timer > 2.0):
 			state = GameState.CHECKING
 			get_tree().create_timer(1.0).timeout.connect(finish_check)
-	if flash.color.a > 0: flash.color.a = move_toward(flash.color.a, 0.0, delta * 1.8)
+	if flash.color.a > 0: flash.color.a = move_toward(flash.color.a, 0.0, delta * 3.6)
 	if shake_amount > 0:
-		camera.h_offset = randf_range(-shake_amount, shake_amount)
-		camera.v_offset = randf_range(-shake_amount, shake_amount)
-		shake_amount = move_toward(shake_amount, 0.0, delta * .8)
+		shake_phase += delta * 32.0
+		camera.h_offset = sin(shake_phase) * shake_amount
+		camera.v_offset = sin(shake_phase * 1.65) * shake_amount * .32
+		shake_amount = move_toward(shake_amount, 0.0, delta * 1.9)
 	else:
 		camera.h_offset = 0; camera.v_offset = 0
 
