@@ -7,6 +7,7 @@ const STAGE_NAMES := ["첫 번째 탑", "쌍둥이 성", "회전 요새"]
 const BLOCK_RED := Color("e62f43")
 const BLOCK_DARK := Color("a8142b")
 const CREAM := Color("fff0c2")
+const BLOCK_SCRIPT := preload("res://scripts/physics_block.gd")
 
 var state := GameState.READY
 var level := 0
@@ -17,9 +18,6 @@ var projectile: RigidBody3D
 var projectile_timer := 0.0
 var cannon_yaw := 0.0
 var cannon_pitch := deg_to_rad(14.0)
-var drag_origin := Vector2.ZERO
-var drag_last := Vector2.ZERO
-var dragging := false
 var stage_root: Node3D
 var cannon_pivot: Node3D
 var barrel_pivot: Node3D
@@ -30,7 +28,6 @@ var moves_label: Label
 var target_label: Label
 var level_label: Label
 var hint_label: Label
-var fire_button: Button
 var overlay: Control
 var overlay_title: Label
 var overlay_body: Label
@@ -151,25 +148,13 @@ func build_ui() -> void:
 	pause.pressed.connect(toggle_pause)
 	ui.add_child(pause)
 
-	hint_label = make_label("드래그로 조준하고 발사하세요", 19, Color.WHITE)
+	hint_label = make_label("쓰러뜨릴 블록을 선택하세요", 19, Color.WHITE)
 	hint_label.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
 	hint_label.position = Vector2(-185, -174)
 	hint_label.size = Vector2(370, 42)
 	hint_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hint_label.add_theme_stylebox_override("normal", panel_style(Color(0.03, .06, .18, .62), 20))
 	ui.add_child(hint_label)
-
-	fire_button = Button.new()
-	fire_button.text = "발사!"
-	fire_button.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
-	fire_button.position = Vector2(-82, -116)
-	fire_button.size = Vector2(164, 82)
-	fire_button.add_theme_font_size_override("font_size", 28)
-	fire_button.add_theme_color_override("font_color", Color.WHITE)
-	fire_button.add_theme_stylebox_override("normal", panel_style(Color("ef304c"), 38, 5, Color("ffcc27")))
-	fire_button.add_theme_stylebox_override("hover", panel_style(Color("ff4960"), 38, 5, Color.WHITE))
-	fire_button.pressed.connect(fire)
-	ui.add_child(fire_button)
 
 	flash = ColorRect.new()
 	flash.color = Color(1, 1, 1, 0)
@@ -212,7 +197,6 @@ func load_level(index: int) -> void:
 	state = GameState.READY
 	projectile = null
 	overlay.visible = false
-	fire_button.disabled = false
 	cannon_yaw = 0.0
 	cannon_pitch = deg_to_rad(14)
 	update_cannon()
@@ -234,7 +218,7 @@ func load_level(index: int) -> void:
 	else:
 		build_fortress()
 	update_hud()
-	hint_label.text = STAGE_NAMES[level] + " · 드래그로 조준"
+	hint_label.text = STAGE_NAMES[level] + " · 타워를 터치하세요"
 
 func build_tower(offset: Vector3, columns: int, rows: int) -> void:
 	for y in range(rows):
@@ -252,6 +236,7 @@ func build_fortress() -> void:
 
 func add_block(pos: Vector3, size: Vector3, is_target: bool, heavy: bool) -> void:
 	var body := RigidBody3D.new()
+	body.set_script(BLOCK_SCRIPT)
 	body.position = pos + Vector3(0, 0, -1.0)
 	body.mass = 2.6 if heavy else 1.0
 	body.set_meta("target", is_target)
@@ -275,18 +260,24 @@ func add_block(pos: Vector3, size: Vector3, is_target: bool, heavy: bool) -> voi
 		targets_left += 1
 	stage_root.add_child(body)
 
-func fire() -> void:
+func fire_at(target: Vector3) -> void:
 	if state not in [GameState.READY, GameState.AIMING] or moves <= 0: return
+	var origin := cannon_pivot.position + Vector3.UP * .7
+	var launch_velocity := ballistic_velocity(origin, target, 19.0)
+	if launch_velocity.length_squared() < 0.1: return
+	cannon_yaw = atan2(-launch_velocity.x, -launch_velocity.z)
+	cannon_pitch = asin(clamp(launch_velocity.normalized().y, -1.0, 1.0))
+	update_cannon()
 	state = GameState.PROJECTILE_ACTIVE
 	moves -= 1
 	projectile_timer = 0.0
 	projectile = RigidBody3D.new()
 	projectile.mass = 2.2
 	projectile.continuous_cd = true
-	projectile.position = cannon_pivot.position + shot_direction() * 2.8 + Vector3.UP * .7
+	projectile.position = origin + launch_velocity.normalized() * 2.8
 	projectile.add_child(mesh_sphere(.42, Color("192237")))
 	projectile.add_child(shape_sphere(.42))
-	projectile.linear_velocity = shot_direction() * 17.5
+	projectile.linear_velocity = launch_velocity
 	projectile.contact_monitor = true
 	projectile.max_contacts_reported = 8
 	projectile.body_entered.connect(on_projectile_hit)
@@ -294,11 +285,14 @@ func fire() -> void:
 	shake_amount = .18
 	flash.color.a = .4
 	update_hud()
-	hint_label.text = "쾅! 연쇄 충돌을 노려보세요"
+	hint_label.text = "선택한 지점으로 발사했습니다"
 
-func on_projectile_hit(_body: Node) -> void:
+func on_projectile_hit(body: Node) -> void:
 	shake_amount = max(shake_amount, .24)
 	flash.color.a = .22
+	if body.has_method("activate_physics"):
+		var impulse := projectile.linear_velocity.normalized() * 10.5 if is_instance_valid(projectile) else Vector3.ZERO
+		body.activate_physics(impulse)
 
 func _physics_process(delta: float) -> void:
 	if state == GameState.PAUSED: return
@@ -335,13 +329,11 @@ func finish_check() -> void:
 	elif moves <= 0: fail_stage()
 	else:
 		state = GameState.READY
-		fire_button.disabled = false
-		hint_label.text = "남은 타깃을 쓰러뜨리세요"
+		hint_label.text = "남은 타깃 블록을 선택하세요"
 
 func clear_stage() -> void:
 	if state == GameState.CLEAR: return
 	state = GameState.CLEAR
-	fire_button.disabled = true
 	score += moves * 500
 	var stars := 3 if moves >= 3 else (2 if moves >= 1 else 1)
 	overlay_title.text = "STAGE CLEAR!"
@@ -351,7 +343,6 @@ func clear_stage() -> void:
 
 func fail_stage() -> void:
 	state = GameState.FAIL
-	fire_button.disabled = true
 	overlay_title.text = "한 번 더!"
 	overlay_body.text = "타깃 %d개가 남았어요\n조금 아래를 노려보세요" % targets_left
 	overlay_button.text = "다시 도전"
@@ -374,33 +365,25 @@ func toggle_pause() -> void:
 		overlay.visible = true
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_SPACE:
-		fire()
-		return
 	if state not in [GameState.READY, GameState.AIMING]: return
-	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
-		if event.position.y > get_viewport().get_visible_rect().size.y - 145: return
-		dragging = event.pressed
-		if dragging:
-			drag_origin = event.position
-			drag_last = event.position
-			state = GameState.AIMING
-		else: state = GameState.READY
-	elif event is InputEventMouseMotion and dragging:
-		apply_drag(event.position - drag_last)
-		drag_last = event.position
-	elif event is InputEventScreenTouch:
-		dragging = event.pressed
-		drag_last = event.position
-		state = GameState.AIMING if dragging else GameState.READY
-	elif event is InputEventScreenDrag:
-		apply_drag(event.relative)
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+		select_tower_point(event.position)
+	elif event is InputEventScreenTouch and event.pressed:
+		select_tower_point(event.position)
 
-func apply_drag(delta: Vector2) -> void:
-	cannon_yaw = clamp(cannon_yaw - delta.x * .004, deg_to_rad(-22), deg_to_rad(22))
-	cannon_pitch = clamp(cannon_pitch + delta.y * .003, deg_to_rad(4), deg_to_rad(30))
-	update_cannon()
-	hint_label.text = "각도 %d° · 발사 버튼을 누르세요" % int(rad_to_deg(cannon_pitch))
+func select_tower_point(screen_position: Vector2) -> void:
+	var ray_origin := camera.project_ray_origin(screen_position)
+	var ray_end := ray_origin + camera.project_ray_normal(screen_position) * 100.0
+	var query := PhysicsRayQueryParameters3D.create(ray_origin, ray_end)
+	query.collide_with_areas = false
+	var hit := get_world_3d().direct_space_state.intersect_ray(query)
+	if hit.is_empty():
+		return
+	var collider: Object = hit["collider"]
+	if collider is Node and (collider as Node).is_in_group("blocks"):
+		fire_at(hit["position"])
+	else:
+		hint_label.text = "타워 블록을 정확히 선택하세요"
 
 func update_cannon() -> void:
 	if not cannon_pivot: return
@@ -409,6 +392,21 @@ func update_cannon() -> void:
 
 func shot_direction() -> Vector3:
 	return Vector3(-sin(cannon_yaw) * cos(cannon_pitch), sin(cannon_pitch), -cos(cannon_yaw) * cos(cannon_pitch)).normalized()
+
+func ballistic_velocity(origin: Vector3, target: Vector3, speed: float) -> Vector3:
+	var offset := target - origin
+	var flat := Vector3(offset.x, 0, offset.z)
+	var distance := flat.length()
+	if distance < 0.01:
+		return Vector3.ZERO
+	var gravity := 12.0
+	var speed_sq := speed * speed
+	var discriminant := speed_sq * speed_sq - gravity * (gravity * distance * distance + 2.0 * offset.y * speed_sq)
+	if discriminant < 0.0:
+		return offset.normalized() * speed
+	var tangent := (speed_sq - sqrt(discriminant)) / (gravity * distance)
+	var horizontal_speed := speed / sqrt(1.0 + tangent * tangent)
+	return flat.normalized() * horizontal_speed + Vector3.UP * horizontal_speed * tangent
 
 func update_hud() -> void:
 	if not moves_label: return
