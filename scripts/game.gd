@@ -198,6 +198,7 @@ func load_level(index: int) -> void:
 	state = GameState.READY
 	projectile = null
 	impact_started = false
+	platform_angle = 0.0
 	overlay.visible = false
 	cannon_yaw = 0.0
 	cannon_pitch = deg_to_rad(14)
@@ -205,6 +206,10 @@ func load_level(index: int) -> void:
 
 	platform = AnimatableBody3D.new()
 	platform.position = Vector3(0, 0, -1.0)
+	var platform_physics := PhysicsMaterial.new()
+	platform_physics.friction = 1.0
+	platform_physics.rough = true
+	platform.physics_material_override = platform_physics
 	platform.add_child(mesh_box(Vector3(7.3, 0.55, 5.1), Color("623bc1")))
 	platform.add_child(shape_box(Vector3(7.3, 0.55, 5.1)))
 	stage_root.add_child(platform)
@@ -241,6 +246,10 @@ func add_block(pos: Vector3, size: Vector3, is_target: bool, heavy: bool) -> voi
 	body.set_script(BLOCK_SCRIPT)
 	body.position = pos + Vector3(0, 0, -1.0)
 	body.mass = 2.6 if heavy else 1.0
+	var block_physics := PhysicsMaterial.new()
+	block_physics.friction = 1.0
+	block_physics.rough = true
+	body.physics_material_override = block_physics
 	body.set_meta("target", is_target)
 	body.set_meta("counted", false)
 	body.set_meta("value", 200 if is_target else 100)
@@ -263,7 +272,7 @@ func add_block(pos: Vector3, size: Vector3, is_target: bool, heavy: bool) -> voi
 	stage_root.add_child(body)
 
 func fire_at(target: Vector3) -> void:
-	if state not in [GameState.READY, GameState.AIMING] or moves <= 0: return
+	if state not in [GameState.READY, GameState.AIMING, GameState.PROJECTILE_ACTIVE] or moves <= 0: return
 	var origin := cannon_pivot.position + Vector3.UP * .7
 	var launch_velocity := ballistic_velocity(origin, target, 19.0)
 	if launch_velocity.length_squared() < 0.1: return
@@ -282,14 +291,14 @@ func fire_at(target: Vector3) -> void:
 	projectile.linear_velocity = launch_velocity
 	projectile.contact_monitor = true
 	projectile.max_contacts_reported = 8
-	projectile.body_entered.connect(on_projectile_hit)
+	projectile.body_entered.connect(on_projectile_hit.bind(projectile))
 	add_child(projectile)
 	shake_amount = .18
 	flash.color.a = .4
 	update_hud()
 	hint_label.text = "선택한 지점으로 발사했습니다"
 
-func on_projectile_hit(body: Node) -> void:
+func on_projectile_hit(body: Node, source_projectile: RigidBody3D) -> void:
 	shake_amount = max(shake_amount, .24)
 	flash.color.a = .22
 	if not impact_started:
@@ -300,14 +309,25 @@ func on_projectile_hit(body: Node) -> void:
 			if is_instance_valid(block) and block.has_method("activate_physics"):
 				block.activate_physics()
 	if body.has_method("activate_physics"):
-		var impulse := projectile.linear_velocity.normalized() * 10.5 if is_instance_valid(projectile) else Vector3.ZERO
+		var impulse := source_projectile.linear_velocity.normalized() * 10.5 if is_instance_valid(source_projectile) else Vector3.ZERO
 		body.activate_physics(impulse)
 
 func _physics_process(delta: float) -> void:
 	if state == GameState.PAUSED: return
 	if level == 2 and platform and is_instance_valid(platform):
-		platform_angle += delta * .26
+		var angle_delta := delta * .26
+		platform_angle += angle_delta
 		platform.rotation.y = platform_angle
+		# Frozen rigid bodies do not inherit an AnimatableBody transform, so carry
+		# them explicitly until the first impact enables normal dynamics.
+		if not impact_started:
+			var rotation_center := platform.global_position
+			for block in get_tree().get_nodes_in_group("blocks"):
+				if not is_instance_valid(block): continue
+				var relative := block.global_position - rotation_center
+				relative = relative.rotated(Vector3.UP, angle_delta)
+				block.global_position = rotation_center + relative
+				block.rotate_y(angle_delta)
 	check_dropped_blocks()
 	if projectile and is_instance_valid(projectile):
 		projectile_timer += delta
@@ -374,7 +394,7 @@ func toggle_pause() -> void:
 		overlay.visible = true
 
 func _input(event: InputEvent) -> void:
-	if state not in [GameState.READY, GameState.AIMING]: return
+	if state not in [GameState.READY, GameState.AIMING, GameState.PROJECTILE_ACTIVE]: return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 		select_tower_point(event.position)
 	elif event is InputEventScreenTouch and event.pressed:
