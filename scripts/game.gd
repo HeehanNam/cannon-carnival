@@ -298,6 +298,34 @@ func generate_level_structure(level_index: int) -> void:
 			build_domino_garden(tier)
 		9:
 			build_laboratory(tier)
+	if tier >= 2:
+		build_depth_defenses(tier, level_index)
+
+func build_depth_defenses(tier: int, level_index: int) -> void:
+	# Later stages gain grounded layers along the depth axis. Spacing keeps each
+	# layer physically separate while requiring shots through or around the front.
+	var rear_z := -1.38
+	var rear_columns := [-2.45, 0.0, 2.45]
+	var rear_height: int = 1 if tier == 2 else 2
+	for column_index in range(rear_columns.size()):
+		for y in range(rear_height):
+			var rear_type := "ice" if (column_index + y + level_index) % 3 == 0 else "wood"
+			if tier >= 4 and column_index == 1 and y == 0:
+				rear_type = "explosive"
+			add_block(Vector3(rear_columns[column_index], .775 + y, rear_z), Vector3(.78, 1.0, .72), y == rear_height - 1, false, rear_type)
+	if tier < 3:
+		return
+	var front_z := 1.38
+	var front_columns := [-1.85, 0.0, 1.85]
+	var front_height: int = 1 if tier == 3 else 2
+	for column_index in range(front_columns.size()):
+		for y in range(front_height):
+			var front_type := "glass" if (column_index + y) % 2 == 0 else "stone"
+			add_block(Vector3(front_columns[column_index], .775 + y, front_z), Vector3(.76, 1.0, .72), y == front_height - 1, front_type == "stone", front_type)
+	if tier >= 4:
+		# A low middle-depth brace makes the final ten stages genuinely three-layered.
+		for x in [-2.75, 2.75]:
+			add_block(Vector3(x, .725, 0), Vector3(.68, .9, .68), false, false, "ice")
 
 func build_tower(offset: Vector3, columns: int, rows: int) -> void:
 	for y in range(rows):

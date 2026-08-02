@@ -51,6 +51,18 @@ func _run() -> void:
 		push_error("The five level themes do not use distinct sky colors")
 		quit(1)
 		return
+	game.load_level(40)
+	await process_frame
+	var depth_bands := {}
+	for candidate in get_nodes_in_group("blocks"):
+		var layered_block := candidate as Node3D
+		if layered_block == null: continue
+		var local_block_position: Vector3 = game.platform.to_local(layered_block.global_position)
+		depth_bands[roundi(local_block_position.z * 10.0)] = true
+	if depth_bands.size() < 3:
+		push_error("Late-game level does not contain at least three depth layers")
+		quit(1)
+		return
 	game.load_level(7)
 	await physics_frame
 	for candidate in get_nodes_in_group("blocks"):
