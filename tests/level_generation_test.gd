@@ -39,5 +39,34 @@ func _run() -> void:
 		push_error("Glass block did not break and update remaining count")
 		quit(1)
 		return
+	game.load_level(7)
+	await physics_frame
+	for candidate in get_nodes_in_group("blocks"):
+		var spiral_block := candidate as RigidBody3D
+		if spiral_block == null: continue
+		var support_query := PhysicsRayQueryParameters3D.create(spiral_block.global_position, spiral_block.global_position + Vector3.DOWN * 1.25)
+		support_query.exclude = [spiral_block.get_rid()]
+		var support_hit: Dictionary = game.get_world_3d().direct_space_state.intersect_ray(support_query)
+		if support_hit.is_empty():
+			push_error("Spiral level contains an unsupported floating block")
+			quit(1)
+			return
+	game.state = game.GameState.CHECKING
+	game.moves = 2
+	game.fire_at(Vector3(0, 1, -1))
+	if game.moves != 1 or game.state != game.GameState.PROJECTILE_ACTIVE:
+		push_error("A shot could not be fired while result checking was active")
+		quit(1)
+		return
+	game.load_level(0)
+	await process_frame
+	game.state = game.GameState.CHECKING
+	game.moves = 2
+	game.blocks_left = 0
+	game.confirm_platform_empty()
+	if game.state != game.GameState.READY or game.blocks_left <= 0:
+		push_error("Result checking did not recover from a stale block count")
+		quit(1)
+		return
 	print("50 levels generated successfully")
 	quit()

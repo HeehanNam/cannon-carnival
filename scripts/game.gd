@@ -328,12 +328,17 @@ func build_arch(tier: int) -> void:
 		add_block(Vector3(2.7, .775, 0), Vector3(.75, 1.0, .75), false, false, "ice")
 
 func build_spiral(tier: int) -> void:
-	var count: int = 10 + tier * 2
-	for i in range(count):
-		var angle: float = float(i) * .72
-		var radius: float = 1.75 - min(float(i) * .035, .55)
-		var block_type := "ice" if i % 5 == 2 and tier >= 1 else ""
-		add_block(Vector3(cos(angle) * radius, .775 + i * .32, sin(angle) * radius), Vector3(.7, .72, .7), i >= count - 2, tier >= 4 and i % 6 == 0, block_type)
+	# Every step is a grounded vertical column. The curved height profile keeps
+	# the spiral silhouette without relying on unsupported floating blocks.
+	var columns: int = 7 + tier
+	for column in range(columns):
+		var progress: float = float(column) / maxf(1.0, float(columns - 1))
+		var angle: float = lerp(-1.25, 1.25, progress)
+		var radius: float = 2.15
+		var column_height: int = 1 + column % (3 + mini(tier, 2))
+		for y in range(column_height):
+			var block_type := "ice" if tier >= 1 and (column + y) % 6 == 2 else ""
+			add_block(Vector3(sin(angle) * radius, .635 + y * .72, cos(angle) * radius - 1.15), Vector3(.7, .72, .7), y == column_height - 1, tier >= 4 and y == 0, block_type)
 
 func build_domino_garden(tier: int) -> void:
 	var count: int = 11 + tier * 2
@@ -440,7 +445,7 @@ func build_block_visual(body: RigidBody3D, size: Vector3, block_type: String) ->
 			body.add_child(stripe2)
 
 func fire_at(target: Vector3) -> void:
-	if state not in [GameState.READY, GameState.AIMING, GameState.PROJECTILE_ACTIVE] or moves <= 0: return
+	if state not in [GameState.READY, GameState.AIMING, GameState.PROJECTILE_ACTIVE, GameState.CHECKING] or moves <= 0: return
 	var origin := cannon_pivot.position + Vector3.UP * .7
 	var launch_velocity := ballistic_velocity(origin, target, 19.0)
 	if launch_velocity.length_squared() < 0.1: return
@@ -576,7 +581,11 @@ func check_dropped_blocks() -> void:
 			blocks_left -= 1
 			if body.get_meta("target", false): targets_left -= 1
 			update_hud()
-	if blocks_left <= 0 and not clear_pending and state not in [GameState.CLEAR, GameState.FAIL]:
+			get_tree().create_timer(1.2).timeout.connect(body.queue_free)
+	var actual_remaining: int = count_blocks_on_platform()
+	blocks_left = actual_remaining
+	update_hud()
+	if actual_remaining <= 0 and not clear_pending and state not in [GameState.CLEAR, GameState.FAIL]:
 		clear_pending = true
 		get_tree().create_timer(0.8).timeout.connect(confirm_platform_empty)
 
@@ -584,22 +593,35 @@ func is_block_on_platform(body: Node3D) -> bool:
 	if not platform or not is_instance_valid(platform):
 		return false
 	var local_position: Vector3 = platform.to_local(body.global_position)
-	return abs(local_position.x) <= 3.85 and abs(local_position.z) <= 2.8 and local_position.y >= -0.55
+	return abs(local_position.x) <= platform_half_extents.x + .2 and abs(local_position.z) <= platform_half_extents.y + .2 and local_position.y >= -0.55
+
+func count_blocks_on_platform() -> int:
+	var result := 0
+	for node in get_tree().get_nodes_in_group("blocks"):
+		var block := node as Node3D
+		if block != null and is_instance_valid(block) and is_block_on_platform(block):
+			result += 1
+	return result
 
 func confirm_platform_empty() -> void:
 	clear_pending = false
 	if state in [GameState.CLEAR, GameState.FAIL]: return
-	var actual_blocks_on_platform := 0
-	for node in get_tree().get_nodes_in_group("blocks"):
-		var block := node as Node3D
-		if block != null and is_instance_valid(block) and is_block_on_platform(block):
-			actual_blocks_on_platform += 1
+	var actual_blocks_on_platform: int = count_blocks_on_platform()
+	blocks_left = actual_blocks_on_platform
+	update_hud()
 	if actual_blocks_on_platform == 0:
-		blocks_left = 0
 		clear_stage()
+	elif moves > 0:
+		state = GameState.READY
+		hint_label.text = "남은 블록을 향해 다시 발사하세요"
+	else:
+		fail_stage()
 
 func finish_check() -> void:
 	if state in [GameState.CLEAR, GameState.FAIL]: return
+	if state == GameState.PROJECTILE_ACTIVE: return
+	blocks_left = count_blocks_on_platform()
+	update_hud()
 	if blocks_left <= 0:
 		if not clear_pending:
 			clear_pending = true
@@ -643,7 +665,7 @@ func toggle_pause() -> void:
 		overlay.visible = true
 
 func _input(event: InputEvent) -> void:
-	if state not in [GameState.READY, GameState.AIMING, GameState.PROJECTILE_ACTIVE]: return
+	if state not in [GameState.READY, GameState.AIMING, GameState.PROJECTILE_ACTIVE, GameState.CHECKING]: return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 		select_tower_point(event.position)
 	elif event is InputEventScreenTouch and event.pressed:
