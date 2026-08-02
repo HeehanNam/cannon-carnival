@@ -60,8 +60,8 @@ func build_environment() -> void:
 	add_child(sun)
 
 	camera = Camera3D.new()
-	camera.position = Vector3(0, 7.2, 15.5)
-	camera.rotation_degrees = Vector3(-14, 0, 0)
+	camera.position = Vector3(0, 6.25, 15.5)
+	camera.rotation_degrees = Vector3(-11, 0, 0)
 	camera.fov = 47
 	add_child(camera)
 
@@ -71,10 +71,12 @@ func build_environment() -> void:
 	ground.add_child(mesh_box(Vector3(36, 0.5, 36), Color("62ba24")))
 	ground.add_child(shape_box(Vector3(36, 0.5, 36)))
 	add_child(ground)
+	# Keep the entire firing lane clear. Decorations live behind the target only.
 	for i in range(18):
 		var tree := Node3D.new()
-		var angle := TAU * float(i) / 18.0
-		tree.position = Vector3(cos(angle) * 10.5, 0, -2.5 + sin(angle) * 5.5)
+		var row := i / 9
+		var column := i % 9
+		tree.position = Vector3(-10.0 + column * 2.5, 0, -5.5 - row * 2.2)
 		tree.add_child(mesh_cylinder(0.18, 1.0, Color("9b6028")))
 		var crown := mesh_sphere(0.75, Color.from_hsv(0.28 + (i % 3) * .02, .72, .65 + (i % 2) * .12))
 		crown.position.y = 1.0
