@@ -2,8 +2,8 @@ extends Node3D
 
 enum GameState { READY, AIMING, PROJECTILE_ACTIVE, CHECKING, CLEAR, FAIL, PAUSED }
 
-const MOVE_LIMITS := [7, 6, 5]
-const STAGE_NAMES := ["첫 번째 탑", "쌍둥이 성", "회전 요새"]
+const LEVEL_COUNT := 50
+const TEMPLATE_NAMES := ["중앙 타워", "쌍둥이 성", "회전 요새", "계단 피라미드", "블록 장벽"]
 const BLOCK_RED := Color("e62f43")
 const BLOCK_DARK := Color("a8142b")
 const CREAM := Color("fff0c2")
@@ -14,6 +14,7 @@ var level := 0
 var moves := 7
 var score := 0
 var targets_left := 0
+var blocks_left := 0
 var projectile: RigidBody3D
 var projectile_timer := 0.0
 var cannon_yaw := 0.0
@@ -24,7 +25,9 @@ var barrel_pivot: Node3D
 var camera: Camera3D
 var platform: AnimatableBody3D
 var platform_angle := 0.0
+var platform_rotation_speed := 0.0
 var impact_started := false
+var clear_pending := false
 var moves_label: Label
 var target_label: Label
 var level_label: Label
@@ -192,15 +195,18 @@ func build_ui() -> void:
 	overlay.add_child(overlay_button)
 
 func load_level(index: int) -> void:
-	level = posmod(index, MOVE_LIMITS.size())
+	level = posmod(index, LEVEL_COUNT)
 	for child in stage_root.get_children(): child.queue_free()
-	moves = MOVE_LIMITS[level]
+	moves = move_limit_for_level(level)
 	score = 0
 	targets_left = 0
+	blocks_left = 0
 	state = GameState.READY
 	projectile = null
 	impact_started = false
+	clear_pending = false
 	platform_angle = 0.0
+	platform_rotation_speed = rotation_speed_for_level(level)
 	overlay.visible = false
 	cannon_yaw = 0.0
 	cannon_pitch = deg_to_rad(14)
@@ -219,15 +225,39 @@ func load_level(index: int) -> void:
 	trim.position.y = .35
 	platform.add_child(trim)
 
-	if level == 0: build_tower(Vector3.ZERO, 3, 3)
-	elif level == 1:
-		build_tower(Vector3(-1.7, 0, 0), 2, 3)
-		build_tower(Vector3(1.7, 0, 0), 2, 3)
-		add_block(Vector3(0, 3.55, 0), Vector3(3.6, .55, .75), true, false)
-	else:
-		build_fortress()
+	generate_level_structure(level)
 	update_hud()
-	hint_label.text = STAGE_NAMES[level] + " · 화면을 터치하세요"
+	hint_label.text = TEMPLATE_NAMES[level % TEMPLATE_NAMES.size()] + " · 화면을 터치하세요"
+
+func move_limit_for_level(level_index: int) -> int:
+	var tier: int = int(level_index / 10)
+	var template_bonus: int = 1 if level_index % 5 in [1, 2, 4] else 0
+	return max(6, 9 + template_bonus - int(tier / 2))
+
+func rotation_speed_for_level(level_index: int) -> float:
+	if level_index < 5:
+		return 0.0
+	if level_index % 3 != 2 and level_index < 30:
+		return 0.0
+	return 0.12 + float(int(level_index / 10)) * 0.035
+
+func generate_level_structure(level_index: int) -> void:
+	var tier: int = int(level_index / 10)
+	var template: int = level_index % 5
+	match template:
+		0:
+			build_tower(Vector3.ZERO, 3 + tier % 2, 3 + min(tier, 2))
+		1:
+			var rows: int = 3 + mini(int(tier / 2), 2)
+			build_tower(Vector3(-1.75, 0, 0), 2, rows)
+			build_tower(Vector3(1.75, 0, 0), 2, rows)
+			add_block(Vector3(0, float(rows) + .55, 0), Vector3(3.7, .55, .75), true, tier >= 3)
+		2:
+			build_fortress(tier)
+		3:
+			build_pyramid(3 + min(tier, 2), tier)
+		4:
+			build_wall(4 + tier % 2, 3 + min(int(tier / 2), 1), tier)
 
 func build_tower(offset: Vector3, columns: int, rows: int) -> void:
 	for y in range(rows):
@@ -236,12 +266,31 @@ func build_tower(offset: Vector3, columns: int, rows: int) -> void:
 			var target := y == rows - 1 or (y == 1 and x == columns / 2)
 			add_block(offset + Vector3(px, .775 + y * 1.0, 0), Vector3(.82, 1.0, .82), target, (x + y) % 4 == 0)
 
-func build_fortress() -> void:
+func build_fortress(tier: int) -> void:
 	for x in [-2.25, -1.12, 0.0, 1.12, 2.25]: add_block(Vector3(x, .775, 0), Vector3(.82, 1.0, .82), x == 0, false)
 	for x in [-2.0, 0.0, 2.0]: add_block(Vector3(x, 1.775, 0), Vector3(.9, 1.0, .9), true, x != 0)
 	add_block(Vector3(-1.0, 2.5, 0), Vector3(2.7, .45, .75), false, false)
 	add_block(Vector3(1.0, 2.5, 0), Vector3(2.7, .45, .75), false, false)
 	add_block(Vector3(0, 3.225, 0), Vector3(.9, 1.0, .9), true, false)
+	if tier >= 2:
+		add_block(Vector3(-2.65, 1.775, 0), Vector3(.82, 1.0, .82), false, tier >= 4)
+		add_block(Vector3(2.65, 1.775, 0), Vector3(.82, 1.0, .82), false, tier >= 4)
+
+func build_pyramid(rows: int, tier: int) -> void:
+	var base_count: int = rows + 1
+	for y in range(rows):
+		var count: int = base_count - y
+		for x in range(count):
+			var px: float = (x - (count - 1) * .5) * 1.08
+			var is_top: bool = y == rows - 1
+			add_block(Vector3(px, .775 + y, 0), Vector3(.82, 1.0, .82), is_top, tier >= 3 and (x + y) % 5 == 0)
+
+func build_wall(columns: int, rows: int, tier: int) -> void:
+	for y in range(rows):
+		for x in range(columns):
+			var px: float = (x - (columns - 1) * .5) * 1.08
+			var offset_x: float = .27 if y % 2 == 1 else 0.0
+			add_block(Vector3(px + offset_x, .775 + y, 0), Vector3(.82, 1.0, .82), y == rows - 1, tier >= 2 and (x + y) % 4 == 0)
 
 func add_block(pos: Vector3, size: Vector3, is_target: bool, heavy: bool) -> void:
 	var body := RigidBody3D.new()
@@ -256,6 +305,7 @@ func add_block(pos: Vector3, size: Vector3, is_target: bool, heavy: bool) -> voi
 	body.set_meta("counted", false)
 	body.set_meta("value", 200 if is_target else 100)
 	body.add_to_group("blocks")
+	blocks_left += 1
 	var color := Color("702f9e") if heavy else BLOCK_RED
 	body.add_child(mesh_cylinder(size.x * .5, size.y, color))
 	body.add_child(shape_cylinder(size.x * .5, size.y))
@@ -316,8 +366,8 @@ func on_projectile_hit(body: Node, source_projectile: RigidBody3D) -> void:
 
 func _physics_process(delta: float) -> void:
 	if state == GameState.PAUSED: return
-	if level == 2 and platform and is_instance_valid(platform):
-		var angle_delta := delta * .26
+	if platform_rotation_speed > 0.0 and platform and is_instance_valid(platform):
+		var angle_delta := delta * platform_rotation_speed
 		platform_angle += angle_delta
 		platform.rotation.y = platform_angle
 		# Frozen rigid bodies do not inherit an AnimatableBody transform, so carry
@@ -349,16 +399,40 @@ func _physics_process(delta: float) -> void:
 func check_dropped_blocks() -> void:
 	for body in get_tree().get_nodes_in_group("blocks"):
 		if not is_instance_valid(body) or body.get_meta("counted", false): continue
-		if body.position.y < -0.65 or abs(body.position.x) > 4.2 or body.position.z > 2.2 or body.position.z < -4.2:
+		if not is_block_on_platform(body):
 			body.set_meta("counted", true)
 			score += int(body.get_meta("value", 100))
+			blocks_left -= 1
 			if body.get_meta("target", false): targets_left -= 1
 			update_hud()
-			if targets_left <= 0: clear_stage()
+	if blocks_left <= 0 and not clear_pending and state not in [GameState.CLEAR, GameState.FAIL]:
+		clear_pending = true
+		get_tree().create_timer(0.8).timeout.connect(confirm_platform_empty)
+
+func is_block_on_platform(body: Node3D) -> bool:
+	if not platform or not is_instance_valid(platform):
+		return false
+	var local_position: Vector3 = platform.to_local(body.global_position)
+	return abs(local_position.x) <= 3.85 and abs(local_position.z) <= 2.8 and local_position.y >= -0.55
+
+func confirm_platform_empty() -> void:
+	clear_pending = false
+	if state in [GameState.CLEAR, GameState.FAIL]: return
+	var actual_blocks_on_platform := 0
+	for node in get_tree().get_nodes_in_group("blocks"):
+		var block := node as Node3D
+		if block != null and is_instance_valid(block) and is_block_on_platform(block):
+			actual_blocks_on_platform += 1
+	if actual_blocks_on_platform == 0:
+		blocks_left = 0
+		clear_stage()
 
 func finish_check() -> void:
 	if state in [GameState.CLEAR, GameState.FAIL]: return
-	if targets_left <= 0: clear_stage()
+	if blocks_left <= 0:
+		if not clear_pending:
+			clear_pending = true
+			get_tree().create_timer(0.5).timeout.connect(confirm_platform_empty)
 	elif moves <= 0: fail_stage()
 	else:
 		state = GameState.READY
@@ -377,7 +451,7 @@ func clear_stage() -> void:
 func fail_stage() -> void:
 	state = GameState.FAIL
 	overlay_title.text = "한 번 더!"
-	overlay_body.text = "타깃 %d개가 남았어요\n조금 아래를 노려보세요" % targets_left
+	overlay_body.text = "블록 %d개가 판 위에 남았어요\n조금 아래를 노려보세요" % blocks_left
 	overlay_button.text = "다시 도전"
 	overlay.visible = true
 
@@ -448,7 +522,7 @@ func ballistic_velocity(origin: Vector3, target: Vector3, speed: float) -> Vecto
 func update_hud() -> void:
 	if not moves_label: return
 	moves_label.text = "발사 %d" % moves
-	target_label.text = "타깃 %d" % max(targets_left, 0)
+	target_label.text = "블록 %d" % max(blocks_left, 0)
 	level_label.text = "LEVEL %d" % (level + 1)
 
 func make_label(text_value: String, font_size: int, color: Color) -> Label:
