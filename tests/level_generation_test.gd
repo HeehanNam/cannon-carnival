@@ -51,14 +51,12 @@ func _run() -> void:
 		push_error("The five level themes do not use distinct sky colors")
 		quit(1)
 		return
-	game.load_level(0)
-	var easy_platform_size: Vector2 = game.platform_half_extents
-	game.load_level(40)
-	var hard_platform_size: Vector2 = game.platform_half_extents
-	if hard_platform_size.x >= easy_platform_size.x or hard_platform_size.y >= easy_platform_size.y:
-		push_error("Hard levels do not use a smaller platform")
-		quit(1)
-		return
+	for fitted_level in [0, 20, 40]:
+		game.load_level(fitted_level)
+		if not platform_fits_blocks(game, int(fitted_level / 10)):
+			push_error("Level %d platform does not fit its actual block footprint" % (fitted_level + 1))
+			quit(1)
+			return
 	game.load_level(0)
 	var exact_target := Vector3(0, 1.25, -1.0)
 	game.fire_at(exact_target)
@@ -69,6 +67,16 @@ func _run() -> void:
 	var predicted_height: float = fired_projectile.position.y + fired_projectile.linear_velocity.y * flight_time - .5 * 12.0 * flight_time * flight_time
 	if abs(predicted_height - exact_target.y) > .035:
 		push_error("Ballistic trajectory does not intersect the exact touched height")
+		quit(1)
+		return
+	game.load_level(0)
+	game.state = game.GameState.READY
+	var resume_timer := game.get_tree().create_timer(.01, true, false, true)
+	resume_timer.timeout.connect(game.on_overlay_button)
+	game.toggle_pause()
+	await resume_timer.timeout
+	if game.get_tree().paused or game.state != game.GameState.READY:
+		push_error("Continue button did not resume the paused game")
 		quit(1)
 		return
 	game.load_level(40)
@@ -114,3 +122,23 @@ func _run() -> void:
 		return
 	print("50 levels generated successfully")
 	quit()
+
+func platform_fits_blocks(game, tier: int) -> bool:
+	var min_x := INF
+	var max_x := -INF
+	var min_z := INF
+	var max_z := -INF
+	for candidate in get_nodes_in_group("blocks"):
+		var block := candidate as Node3D
+		if block == null or not block.is_inside_tree(): continue
+		var local_position: Vector3 = game.platform.to_local(block.global_position)
+		var footprint: Vector2 = block.get_meta("footprint", Vector2(.82, .82))
+		min_x = minf(min_x, local_position.x - footprint.x * .5)
+		max_x = maxf(max_x, local_position.x + footprint.x * .5)
+		min_z = minf(min_z, local_position.z - footprint.y * .5)
+		max_z = maxf(max_z, local_position.z + footprint.y * .5)
+	var margins: Array[float] = [1.0, .85, .7, .55, .4]
+	var expected_margin: float = margins[clampi(tier, 0, 4)]
+	var horizontal_fit: bool = abs((min_x + game.platform_half_extents.x) - expected_margin) < .03 and abs((game.platform_half_extents.x - max_x) - expected_margin) < .03
+	var depth_fit: bool = abs((min_z + game.platform_half_extents.y) - expected_margin) < .03 and abs((game.platform_half_extents.y - max_z) - expected_margin) < .03
+	return horizontal_fit and depth_fit

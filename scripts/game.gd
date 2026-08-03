@@ -15,6 +15,7 @@ const GROUND_COLORS := [Color("62ba24"), Color("f2cf72"), Color("f093c3"), Color
 const FOLIAGE_COLORS := [Color("64d83d"), Color("26c5a4"), Color("ff75bd"), Color("b7e7ef"), Color("7656c7")]
 
 var state := GameState.READY
+var state_before_pause := GameState.READY
 var level := 0
 var moves := 7
 var score := 0
@@ -216,7 +217,9 @@ func build_ui() -> void:
 func load_level(index: int) -> void:
 	level = posmod(index, LEVEL_COUNT)
 	apply_level_theme(level)
-	for child in stage_root.get_children(): child.queue_free()
+	for child in stage_root.get_children():
+		stage_root.remove_child(child)
+		child.queue_free()
 	moves = move_limit_for_level(level)
 	score = 0
 	targets_left = 0
@@ -239,12 +242,12 @@ func load_level(index: int) -> void:
 	platform_physics.rough = true
 	platform.physics_material_override = platform_physics
 	var tier: int = int(level / 10)
-	var platform_widths: Array[float] = [8.2, 7.7, 7.2, 6.7, 6.2]
-	var platform_depths: Array[float] = [5.8, 5.3, 4.8, 4.4, 4.0]
-	var platform_size: Vector3 = Vector3(platform_widths[tier], 0.55, platform_depths[tier])
+	var platform_size := Vector3(8.6, 0.55, 6.2)
 	platform_half_extents = Vector2(platform_size.x * .5, platform_size.z * .5)
-	platform.add_child(mesh_box(platform_size, Color("623bc1")))
-	platform.add_child(shape_box(platform_size))
+	var platform_visual := mesh_box(platform_size, Color("623bc1"))
+	var platform_collision := shape_box(platform_size)
+	platform.add_child(platform_visual)
+	platform.add_child(platform_collision)
 	stage_root.add_child(platform)
 	var trim := mesh_box(platform_size + Vector3(.15, -.38, .15), Color("ffca22"))
 	trim.position.y = .35
@@ -254,6 +257,7 @@ func load_level(index: int) -> void:
 	platform.add_child(pedestal)
 
 	generate_level_structure(level)
+	fit_platform_to_structure(tier, platform_visual, platform_collision, trim)
 	update_hud()
 	hint_label.text = THEME_NAMES[int(level / 10)] + " · " + TEMPLATE_NAMES[level % TEMPLATE_NAMES.size()]
 
@@ -274,6 +278,37 @@ func apply_level_theme(level_index: int) -> void:
 			var foliage: Color = FOLIAGE_COLORS[theme_index]
 			foliage = foliage.lightened(variation) if variation >= 0.0 else foliage.darkened(-variation)
 			crown.mesh.material = material(foliage)
+
+func fit_platform_to_structure(tier: int, visual: MeshInstance3D, collision: CollisionShape3D, trim: MeshInstance3D) -> void:
+	var min_x := INF
+	var max_x := -INF
+	var min_z := INF
+	var max_z := -INF
+	for node in get_tree().get_nodes_in_group("blocks"):
+		var block := node as Node3D
+		if block == null or not block.is_inside_tree(): continue
+		var local_position: Vector3 = platform.to_local(block.global_position)
+		var footprint: Vector2 = block.get_meta("footprint", Vector2(.82, .82))
+		min_x = minf(min_x, local_position.x - footprint.x * .5)
+		max_x = maxf(max_x, local_position.x + footprint.x * .5)
+		min_z = minf(min_z, local_position.z - footprint.y * .5)
+		max_z = maxf(max_z, local_position.z + footprint.y * .5)
+	if min_x == INF:
+		return
+	var margins: Array[float] = [1.0, .85, .7, .55, .4]
+	var margin: float = margins[clampi(tier, 0, margins.size() - 1)]
+	var center_x: float = (min_x + max_x) * .5
+	var center_z: float = (min_z + max_z) * .5
+	var fitted_size := Vector3(maxf(2.8, max_x - min_x + margin * 2.0), .55, maxf(2.6, max_z - min_z + margin * 2.0))
+	platform.position = Vector3(center_x, 0, -1.0 + center_z)
+	platform.force_update_transform()
+	platform_half_extents = Vector2(fitted_size.x * .5, fitted_size.z * .5)
+	var box_mesh := visual.mesh as BoxMesh
+	var box_shape := collision.shape as BoxShape3D
+	var trim_mesh := trim.mesh as BoxMesh
+	if box_mesh: box_mesh.size = fitted_size
+	if box_shape: box_shape.size = fitted_size
+	if trim_mesh: trim_mesh.size = Vector3(fitted_size.x + .15, .17, fitted_size.z + .15)
 
 func move_limit_for_level(level_index: int) -> int:
 	var tier: int = int(level_index / 10)
@@ -443,6 +478,7 @@ func add_block(pos: Vector3, size: Vector3, is_target: bool, heavy: bool, reques
 	body.set_meta("value", 200 if is_target else 100)
 	body.set_meta("block_type", block_type)
 	body.set_meta("durability", 2 if block_type == "ice" else 1)
+	body.set_meta("footprint", Vector2(size.x, size.z))
 	body.add_to_group("blocks")
 	blocks_left += 1
 	build_block_visual(body, size, block_type)
@@ -734,14 +770,18 @@ func fail_stage() -> void:
 	overlay.visible = true
 
 func on_overlay_button() -> void:
+	if state == GameState.PAUSED:
+		toggle_pause()
+		return
 	load_level(level + 1 if state == GameState.CLEAR else level)
 
 func toggle_pause() -> void:
 	if state == GameState.PAUSED:
 		get_tree().paused = false
-		state = GameState.READY
+		state = state_before_pause
 		overlay.visible = false
 	else:
+		state_before_pause = state
 		get_tree().paused = true
 		state = GameState.PAUSED
 		overlay_title.text = "일시정지"
