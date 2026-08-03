@@ -51,6 +51,26 @@ func _run() -> void:
 		push_error("The five level themes do not use distinct sky colors")
 		quit(1)
 		return
+	game.load_level(0)
+	var easy_platform_size: Vector2 = game.platform_half_extents
+	game.load_level(40)
+	var hard_platform_size: Vector2 = game.platform_half_extents
+	if hard_platform_size.x >= easy_platform_size.x or hard_platform_size.y >= easy_platform_size.y:
+		push_error("Hard levels do not use a smaller platform")
+		quit(1)
+		return
+	game.load_level(0)
+	var exact_target := Vector3(0, 1.25, -1.0)
+	game.fire_at(exact_target)
+	var fired_projectile: RigidBody3D = game.projectile
+	var horizontal_delta := Vector2(exact_target.x - fired_projectile.position.x, exact_target.z - fired_projectile.position.z)
+	var horizontal_velocity := Vector2(fired_projectile.linear_velocity.x, fired_projectile.linear_velocity.z)
+	var flight_time: float = horizontal_delta.length() / horizontal_velocity.length()
+	var predicted_height: float = fired_projectile.position.y + fired_projectile.linear_velocity.y * flight_time - .5 * 12.0 * flight_time * flight_time
+	if abs(predicted_height - exact_target.y) > .035:
+		push_error("Ballistic trajectory does not intersect the exact touched height")
+		quit(1)
+		return
 	game.load_level(40)
 	await process_frame
 	var depth_bands := {}

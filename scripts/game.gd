@@ -8,6 +8,7 @@ const BLOCK_RED := Color("e62f43")
 const BLOCK_DARK := Color("a8142b")
 const CREAM := Color("fff0c2")
 const BLOCK_SCRIPT := preload("res://scripts/physics_block.gd")
+const PARK_BACKGROUND := preload("res://assets/backgrounds/toy_kingdom_park.png")
 const THEME_NAMES := ["햇살 공원", "산호 해변", "캔디 정원", "눈꽃 마을", "별빛 공원"]
 const SKY_COLORS := [Color("37aef6"), Color("48cfe8"), Color("a978ed"), Color("9bd8f5"), Color("172654")]
 const GROUND_COLORS := [Color("62ba24"), Color("f2cf72"), Color("f093c3"), Color("dbeff5"), Color("35406f")]
@@ -27,6 +28,7 @@ var stage_root: Node3D
 var cannon_pivot: Node3D
 var barrel_pivot: Node3D
 var camera: Camera3D
+var background_sprite: Sprite3D
 var environment_data: Environment
 var ground_visual: MeshInstance3D
 var tree_crowns: Array[MeshInstance3D] = []
@@ -76,6 +78,12 @@ func build_environment() -> void:
 	camera.rotation_degrees = Vector3(-11, 0, 0)
 	camera.fov = 47
 	add_child(camera)
+	background_sprite = Sprite3D.new()
+	background_sprite.texture = PARK_BACKGROUND
+	background_sprite.position = Vector3(0, 5.5, -11.0)
+	background_sprite.pixel_size = .014
+	background_sprite.shaded = false
+	add_child(background_sprite)
 
 	# Sunny park ground.
 	var ground := StaticBody3D.new()
@@ -231,7 +239,9 @@ func load_level(index: int) -> void:
 	platform_physics.rough = true
 	platform.physics_material_override = platform_physics
 	var tier: int = int(level / 10)
-	var platform_size := Vector3(7.3 - tier * .22, 0.55, 5.1 - tier * .14)
+	var platform_widths: Array[float] = [8.2, 7.7, 7.2, 6.7, 6.2]
+	var platform_depths: Array[float] = [5.8, 5.3, 4.8, 4.4, 4.0]
+	var platform_size: Vector3 = Vector3(platform_widths[tier], 0.55, platform_depths[tier])
 	platform_half_extents = Vector2(platform_size.x * .5, platform_size.z * .5)
 	platform.add_child(mesh_box(platform_size, Color("623bc1")))
 	platform.add_child(shape_box(platform_size))
@@ -239,6 +249,9 @@ func load_level(index: int) -> void:
 	var trim := mesh_box(platform_size + Vector3(.15, -.38, .15), Color("ffca22"))
 	trim.position.y = .35
 	platform.add_child(trim)
+	var pedestal := mesh_cylinder(.34, 1.25, Color("f5a919"))
+	pedestal.position.y = -.85
+	platform.add_child(pedestal)
 
 	generate_level_structure(level)
 	update_hud()
@@ -249,6 +262,9 @@ func apply_level_theme(level_index: int) -> void:
 	if environment_data:
 		environment_data.background_color = SKY_COLORS[theme_index]
 		environment_data.ambient_light_color = SKY_COLORS[theme_index].lightened(.58)
+	if background_sprite:
+		var background_tints: Array[Color] = [Color.WHITE, Color("e8fff8"), Color("ffe8fa"), Color("eef8ff"), Color("b8c7ff")]
+		background_sprite.modulate = background_tints[theme_index]
 	if ground_visual and ground_visual.mesh:
 		ground_visual.mesh.material = material(GROUND_COLORS[theme_index])
 	for i in range(tree_crowns.size()):
@@ -508,8 +524,12 @@ func level_block_color(hue_offset: float) -> Color:
 
 func fire_at(target: Vector3) -> void:
 	if state not in [GameState.READY, GameState.AIMING, GameState.PROJECTILE_ACTIVE, GameState.CHECKING] or moves <= 0: return
-	var origin := cannon_pivot.position + Vector3.UP * .7
+	var cannon_origin := cannon_pivot.position + Vector3.UP * .7
+	var origin := cannon_origin
 	var launch_velocity := ballistic_velocity(origin, target, 19.0)
+	for iteration in range(2):
+		origin = cannon_origin + launch_velocity.normalized() * 2.8
+		launch_velocity = ballistic_velocity(origin, target, 19.0)
 	if launch_velocity.length_squared() < 0.1: return
 	cannon_yaw = atan2(-launch_velocity.x, -launch_velocity.z)
 	cannon_pitch = asin(clamp(launch_velocity.normalized().y, -1.0, 1.0))
@@ -520,7 +540,7 @@ func fire_at(target: Vector3) -> void:
 	projectile = RigidBody3D.new()
 	projectile.mass = 2.2
 	projectile.continuous_cd = true
-	projectile.position = origin + launch_velocity.normalized() * 2.8
+	projectile.position = origin
 	projectile.add_child(mesh_sphere(.42, Color("192237")))
 	projectile.add_child(shape_sphere(.42))
 	projectile.linear_velocity = launch_velocity
