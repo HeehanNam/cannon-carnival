@@ -2,8 +2,12 @@
 .godot/
 
 # Exported builds
+build/
 builds/
 exports/
+
+# Codex attachment staging
+.codex-remote-attachments/
 
 # OS and editor files
 .DS_Store

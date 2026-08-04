@@ -34,3 +34,12 @@
 ## 자동 점검
 
 `tests/level_generation_test.gd`는 50개 레벨이 모두 정상적으로 구조물을 생성하는지 검사합니다.
+
+## 원격 플레이 테스트
+
+- Web Preview: https://heehannam.github.io/cannon-carnival/
+- GitHub Actions: https://github.com/HeehanNam/cannon-carnival/actions
+
+`main` 브랜치에 변경사항이 올라오면 Godot 4.7.1로 스크립트 검사, 회귀 테스트, 단일 스레드 Web export를 수행한 뒤 GitHub Pages에 배포합니다. Pull Request에서는 배포 없이 동일한 빌드 검증만 수행합니다.
+
+첫 배포 전에 GitHub 저장소의 **Settings → Pages → Build and deployment → Source**를 **GitHub Actions**로 설정해야 합니다.

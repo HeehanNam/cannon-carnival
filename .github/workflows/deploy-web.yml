@@ -1,0 +1,90 @@
+name: Godot Web Preview
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: godot-web-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GODOT_VERSION: 4.7.1
+  GODOT_RELEASE: stable
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Godot and Web export templates
+        shell: bash
+        run: |
+          set -euo pipefail
+          release="${GODOT_VERSION}-${GODOT_RELEASE}"
+          base_url="https://github.com/godotengine/godot-builds/releases/download/${release}"
+          curl -fL --retry 3 -o /tmp/godot.zip \
+            "${base_url}/Godot_v${release}_linux.x86_64.zip"
+          curl -fL --retry 3 -o /tmp/templates.tpz \
+            "${base_url}/Godot_v${release}_export_templates.tpz"
+          unzip -q /tmp/godot.zip -d /tmp/godot
+          install -Dm755 "/tmp/godot/Godot_v${release}_linux.x86_64" \
+            "$HOME/.local/bin/godot"
+          mkdir -p "$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.${GODOT_RELEASE}"
+          unzip -q /tmp/templates.tpz -d /tmp/export-templates
+          cp -R /tmp/export-templates/templates/. \
+            "$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.${GODOT_RELEASE}/"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Validate project scripts
+        run: godot --headless --editor --path . --quit
+
+      - name: Run gameplay regression test
+        run: godot --headless --single-threaded-scene --path . --script res://tests/level_generation_test.gd
+
+      - name: Export single-threaded Web build
+        run: |
+          mkdir -p build/web
+          godot --headless --path . --export-release "Web" build/web/index.html
+
+      - name: Verify Web export
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f build/web/index.html
+          find build/web -maxdepth 1 -type f -name '*.wasm' -print -quit | grep -q .
+          find build/web -maxdepth 1 -type f -name '*.pck' -print -quit | grep -q .
+          find build/web -maxdepth 1 -type f -name '*.js' -print -quit | grep -q .
+          find build/web -maxdepth 1 -type f -printf '%f\n' | sort
+
+      - name: Configure GitHub Pages
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: actions/configure-pages@v5
+
+      - name: Upload GitHub Pages artifact
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/web
+
+  deploy:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
