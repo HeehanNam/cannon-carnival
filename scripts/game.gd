@@ -3,13 +3,16 @@ extends Node3D
 enum GameState { READY, AIMING, PROJECTILE_ACTIVE, CHECKING, CLEAR, FAIL, PAUSED }
 
 const LEVEL_COUNT := 50
-const TEMPLATE_NAMES := ["중앙 타워", "쌍둥이 성", "회전 요새", "계단 피라미드", "블록 장벽", "공중 다리", "아치 관문", "나선 탑", "도미노 정원", "연금술 연구소"]
+const TEMPLATE_NAMES_KO := ["중앙 타워", "쌍둥이 성", "회전 요새", "계단 피라미드", "블록 장벽", "공중 다리", "아치 관문", "나선 탑", "도미노 정원", "연금술 연구소"]
+const TEMPLATE_NAMES_EN := ["Central Tower", "Twin Castle", "Spinning Fort", "Step Pyramid", "Block Wall", "Sky Bridge", "Arch Gate", "Spiral Tower", "Domino Garden", "Alchemy Lab"]
 const BLOCK_RED := Color("e62f43")
 const BLOCK_DARK := Color("a8142b")
 const CREAM := Color("fff0c2")
 const BLOCK_SCRIPT := preload("res://scripts/physics_block.gd")
 const PARK_BACKGROUND := preload("res://assets/backgrounds/toy_kingdom_park.png")
-const THEME_NAMES := ["햇살 공원", "산호 해변", "캔디 정원", "눈꽃 마을", "별빛 공원"]
+const UI_FONT := preload("res://assets/fonts/NotoSansKR.ttf")
+const THEME_NAMES_KO := ["햇살 공원", "산호 해변", "캔디 정원", "눈꽃 마을", "별빛 공원"]
+const THEME_NAMES_EN := ["Sunny Park", "Coral Beach", "Candy Garden", "Snow Village", "Starlight Park"]
 const SKY_COLORS := [Color("37aef6"), Color("48cfe8"), Color("a978ed"), Color("9bd8f5"), Color("172654")]
 const GROUND_COLORS := [Color("62ba24"), Color("f2cf72"), Color("f093c3"), Color("dbeff5"), Color("35406f")]
 const FOLIAGE_COLORS := [Color("64d83d"), Color("26c5a4"), Color("ff75bd"), Color("b7e7ef"), Color("7656c7")]
@@ -53,8 +56,10 @@ var overlay_button: Button
 var flash: ColorRect
 var shake_amount := 0.0
 var shake_phase := 0.0
+var korean_locale := false
 
 func _ready() -> void:
+	korean_locale = OS.get_locale_language().to_lower() == "ko"
 	build_environment()
 	build_ui()
 	load_level(0)
@@ -146,7 +151,7 @@ func build_ui() -> void:
 	top.custom_minimum_size.y = 92
 	ui.add_child(top)
 
-	moves_label = make_label("발사 7", 29, Color.WHITE)
+	moves_label = make_label(localized("발사 7", "SHOTS 7"), 29, Color.WHITE)
 	moves_label.position = Vector2(22, 19)
 	moves_label.add_theme_stylebox_override("normal", panel_style(Color("7048b8"), 16, 4, Color("ffcf52")))
 	moves_label.custom_minimum_size = Vector2(132, 60)
@@ -161,7 +166,7 @@ func build_ui() -> void:
 	level_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	ui.add_child(level_label)
 
-	target_label = make_label("타깃 0", 20, Color.WHITE)
+	target_label = make_label(localized("블록 0", "BLOCKS 0"), 20, Color.WHITE)
 	target_label.set_anchors_preset(Control.PRESET_TOP_RIGHT)
 	target_label.position = Vector2(-155, 24)
 	target_label.size = Vector2(135, 45)
@@ -170,6 +175,7 @@ func build_ui() -> void:
 
 	var pause := Button.new()
 	pause.text = "Ⅱ"
+	pause.add_theme_font_override("font", UI_FONT)
 	pause.add_theme_font_size_override("font_size", 24)
 	pause.set_anchors_preset(Control.PRESET_TOP_RIGHT)
 	pause.position = Vector2(-61, 18)
@@ -177,7 +183,7 @@ func build_ui() -> void:
 	pause.pressed.connect(toggle_pause)
 	ui.add_child(pause)
 
-	hint_label = make_label("화면을 터치해 발사하세요", 19, Color.WHITE)
+	hint_label = make_label(localized("화면을 터치해 발사하세요", "TAP THE SCREEN TO FIRE"), 19, Color.WHITE)
 	hint_label.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
 	hint_label.position = Vector2(-185, -174)
 	hint_label.size = Vector2(370, 42)
@@ -209,7 +215,8 @@ func build_ui() -> void:
 	overlay_body.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	overlay.add_child(overlay_body)
 	overlay_button = Button.new()
-	overlay_button.text = "다음 스테이지"
+	overlay_button.text = localized("다음 스테이지", "NEXT STAGE")
+	overlay_button.add_theme_font_override("font", UI_FONT)
 	overlay_button.set_anchors_preset(Control.PRESET_CENTER)
 	overlay_button.position = Vector2(-110, 100)
 	overlay_button.size = Vector2(220, 70)
@@ -266,7 +273,9 @@ func load_level(index: int) -> void:
 	generate_level_structure(level)
 	fit_platform_to_structure(tier, platform_visual, platform_collision, trim)
 	update_hud()
-	hint_label.text = THEME_NAMES[int(level / 10)] + " · " + TEMPLATE_NAMES[level % TEMPLATE_NAMES.size()]
+	var theme_names := THEME_NAMES_KO if korean_locale else THEME_NAMES_EN
+	var template_names := TEMPLATE_NAMES_KO if korean_locale else TEMPLATE_NAMES_EN
+	hint_label.text = theme_names[int(level / 10)] + " · " + template_names[level % template_names.size()]
 
 func apply_level_theme(level_index: int) -> void:
 	var theme_index: int = clampi(int(level_index / 10), 0, SKY_COLORS.size() - 1)
@@ -597,7 +606,7 @@ func fire_at(target: Vector3) -> void:
 	shake_amount = max(shake_amount, .025)
 	flash.color.a = .10
 	update_hud()
-	hint_label.text = "선택한 지점으로 발사했습니다"
+	hint_label.text = localized("선택한 지점으로 발사했습니다", "FIRED AT THE SELECTED POINT")
 
 func on_projectile_hit(body: Node, source_projectile: RigidBody3D) -> void:
 	shake_amount = max(shake_amount, .055)
@@ -744,7 +753,7 @@ func confirm_platform_empty() -> void:
 		clear_stage()
 	elif moves > 0:
 		state = GameState.READY
-		hint_label.text = "남은 블록을 향해 다시 발사하세요"
+		hint_label.text = localized("남은 블록을 향해 다시 발사하세요", "FIRE AGAIN AT THE REMAINING BLOCKS")
 	else:
 		fail_stage()
 
@@ -760,23 +769,23 @@ func finish_check() -> void:
 	elif moves <= 0: fail_stage()
 	else:
 		state = GameState.READY
-		hint_label.text = "화면을 터치해 다시 발사하세요"
+		hint_label.text = localized("화면을 터치해 다시 발사하세요", "TAP THE SCREEN TO FIRE AGAIN")
 
 func clear_stage() -> void:
 	if state == GameState.CLEAR: return
 	state = GameState.CLEAR
 	score += moves * 500
 	var stars := 3 if moves >= 3 else (2 if moves >= 1 else 1)
-	overlay_title.text = "STAGE CLEAR!"
-	overlay_body.text = "★".repeat(stars) + "☆".repeat(3 - stars) + "\n점수 %d\n남은 발사 +%d" % [score, moves]
-	overlay_button.text = "다음 스테이지"
+	overlay_title.text = localized("스테이지 클리어!", "STAGE CLEAR!")
+	overlay_body.text = "★".repeat(stars) + "☆".repeat(3 - stars) + localized("\n점수 %d\n남은 발사 +%d", "\nSCORE %d\nSHOTS LEFT +%d") % [score, moves]
+	overlay_button.text = localized("다음 스테이지", "NEXT STAGE")
 	overlay.visible = true
 
 func fail_stage() -> void:
 	state = GameState.FAIL
-	overlay_title.text = "한 번 더!"
-	overlay_body.text = "블록 %d개가 판 위에 남았어요\n조금 아래를 노려보세요" % blocks_left
-	overlay_button.text = "다시 도전"
+	overlay_title.text = localized("한 번 더!", "TRY AGAIN!")
+	overlay_body.text = localized("블록 %d개가 판 위에 남았어요\n조금 아래를 노려보세요", "%d BLOCKS ARE STILL ON THE PLATFORM\nTRY AIMING A LITTLE LOWER") % blocks_left
+	overlay_button.text = localized("다시 도전", "RETRY")
 	overlay.visible = true
 
 func on_overlay_button() -> void:
@@ -794,9 +803,9 @@ func toggle_pause() -> void:
 		state_before_pause = state
 		get_tree().paused = true
 		state = GameState.PAUSED
-		overlay_title.text = "일시정지"
-		overlay_body.text = "잠깐 쉬어가도 좋아요"
-		overlay_button.text = "계속하기"
+		overlay_title.text = localized("일시정지", "PAUSED")
+		overlay_body.text = localized("잠깐 쉬어가도 좋아요", "TAKE A SHORT BREAK")
+		overlay_button.text = localized("계속하기", "CONTINUE")
 		overlay.visible = true
 
 func _input(event: InputEvent) -> void:
@@ -867,13 +876,17 @@ func ballistic_velocity(origin: Vector3, target: Vector3, speed: float) -> Vecto
 
 func update_hud() -> void:
 	if not moves_label: return
-	moves_label.text = "발사 %d" % moves
-	target_label.text = "블록 %d" % max(blocks_left, 0)
+	moves_label.text = localized("발사 %d", "SHOTS %d") % moves
+	target_label.text = localized("블록 %d", "BLOCKS %d") % max(blocks_left, 0)
 	level_label.text = "LEVEL %d" % (level + 1)
+
+func localized(korean_text: String, english_text: String) -> String:
+	return korean_text if korean_locale else english_text
 
 func make_label(text_value: String, font_size: int, color: Color) -> Label:
 	var label := Label.new()
 	label.text = text_value
+	label.add_theme_font_override("font", UI_FONT)
 	label.add_theme_font_size_override("font_size", font_size)
 	label.add_theme_color_override("font_color", color)
 	return label

@@ -22,6 +22,8 @@
 - 50 deterministic levels use 10 structure families and five visual themes.
 - Block materials include barrel, wood, stone, glass, ice, and explosive.
 - Pause must preserve and restore the pre-pause game state.
+- UI language follows `OS.get_locale_language()`: Korean for `ko`, English otherwise.
+- All UI controls must use the bundled `res://assets/fonts/NotoSansKR.ttf`; do not rely on platform font fallback for Web exports.
 
 Do not reintroduce target-only clear logic, unsupported floating structures, drag aiming, large camera shake, or a fixed platform size.
 

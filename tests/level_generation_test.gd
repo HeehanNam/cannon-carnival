@@ -12,6 +12,18 @@ func _run() -> void:
 	var game := packed_scene.instantiate()
 	root.add_child(game)
 	await process_frame
+	game.korean_locale = true
+	game.update_hud()
+	if not game.moves_label.text.begins_with("발사") or not game.target_label.text.begins_with("블록"):
+		push_error("Korean locale did not render Korean HUD text")
+		quit(1)
+		return
+	game.korean_locale = false
+	game.update_hud()
+	if not game.moves_label.text.begins_with("SHOTS") or not game.target_label.text.begins_with("BLOCKS"):
+		push_error("Non-Korean locale did not render English HUD text")
+		quit(1)
+		return
 	for level_index in range(50):
 		game.load_level(level_index)
 		var generated_blocks: int = game.blocks_left
