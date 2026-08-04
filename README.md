@@ -40,6 +40,6 @@
 - Web Preview: https://heehannam.github.io/cannon-carnival/
 - GitHub Actions: https://github.com/HeehanNam/cannon-carnival/actions
 
-`main` 브랜치에 변경사항이 올라오면 Godot 4.7.1로 스크립트 검사, 회귀 테스트, 단일 스레드 Web export를 수행한 뒤 GitHub Pages에 배포합니다. Pull Request에서는 배포 없이 동일한 빌드 검증만 수행합니다.
+`main` 브랜치에 변경사항이 올라오면 Godot 4.7.1로 스크립트 검사, 50레벨 회귀 테스트, 단일 스레드 Web export를 수행합니다. 실행 결과의 `cannon-carnival-web` artifact로 Web 빌드를 내려받을 수 있습니다.
 
-첫 배포 전에 GitHub 저장소의 **Settings → Pages → Build and deployment → Source**를 **GitHub Actions**로 설정해야 합니다.
+공개 저장소에서는 GitHub Pages에도 자동 배포됩니다. 현재처럼 비공개 저장소이고 계정 요금제가 비공개 Pages를 지원하지 않으면 온라인 플레이 주소는 생성되지 않지만, 검사와 Web 빌드 artifact 생성은 정상적으로 완료됩니다.

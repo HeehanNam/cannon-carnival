@@ -43,13 +43,13 @@ The Web export requires Godot 4.7.1 export templates. `build/` is generated outp
 - Preset file: `export_presets.cfg`
 - Workflow: `.github/workflows/deploy-web.yml`
 - Pull requests: parse, regression-test, and Web-export validation only
-- `main` pushes: validate, export, and deploy to GitHub Pages
-- Expected preview: `https://heehannam.github.io/cannon-carnival/`
+- `main` pushes: validate, export, and upload the downloadable `cannon-carnival-web` artifact
+- Public repositories: also deploy to `https://heehannam.github.io/cannon-carnival/`
 - Actions: `https://github.com/HeehanNam/cannon-carnival/actions`
 
 The Pages preview uses a single-threaded Web export because GitHub Pages does not provide custom cross-origin isolation headers. Do not enable Web thread support without changing hosting and verifying headers.
 
-Before the first deployment, repository Settings → Pages → Build and deployment → Source must be set to **GitHub Actions**.
+The repository is currently private, and the current GitHub plan does not support private Pages. Keep CI and artifact upload working while private; if the repository becomes public, the workflow enables and deploys Pages automatically. Do not change repository visibility without explicit user approval.
 
 ## Remote smoke test
 
