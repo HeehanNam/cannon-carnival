@@ -9,7 +9,7 @@ const BLOCK_RED := Color("e62f43")
 const BLOCK_DARK := Color("a8142b")
 const CREAM := Color("fff0c2")
 const BLOCK_SCRIPT := preload("res://scripts/physics_block.gd")
-const PARK_BACKGROUND := preload("res://assets/backgrounds/toy_kingdom_park.png")
+const PARK_BACKGROUND := preload("res://assets/backgrounds/vibrant_kingdom_park.png")
 const UI_FONT := preload("res://assets/fonts/NotoSansKR.ttf")
 const THEME_NAMES_KO := ["햇살 공원", "산호 해변", "캔디 정원", "눈꽃 마을", "별빛 공원"]
 const THEME_NAMES_EN := ["Sunny Park", "Coral Beach", "Candy Garden", "Snow Village", "Starlight Park"]
@@ -71,16 +71,23 @@ func build_environment() -> void:
 	environment_data.background_color = SKY_COLORS[0]
 	environment_data.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	environment_data.ambient_light_color = Color("dff6ff")
-	environment_data.ambient_light_energy = 0.85
+	environment_data.ambient_light_energy = 1.05
 	environment_data.tonemap_mode = Environment.TONE_MAPPER_FILMIC
 	world.environment = environment_data
 	add_child(world)
 
 	var sun := DirectionalLight3D.new()
 	sun.rotation_degrees = Vector3(-48, -28, 0)
-	sun.light_energy = 1.15
+	sun.light_color = Color("fff2cf")
+	sun.light_energy = 1.38
 	sun.shadow_enabled = true
 	add_child(sun)
+	var fill_light := DirectionalLight3D.new()
+	fill_light.rotation_degrees = Vector3(-28, 145, 0)
+	fill_light.light_color = Color("8fd8ff")
+	fill_light.light_energy = .42
+	fill_light.shadow_enabled = false
+	add_child(fill_light)
 
 	camera = Camera3D.new()
 	camera.position = Vector3(0, 6.25, 15.5)
@@ -89,8 +96,8 @@ func build_environment() -> void:
 	add_child(camera)
 	background_sprite = Sprite3D.new()
 	background_sprite.texture = PARK_BACKGROUND
-	background_sprite.position = Vector3(0, 5.5, -11.0)
-	background_sprite.pixel_size = .014
+	background_sprite.position = Vector3(0, 6.0, -12.5)
+	background_sprite.pixel_size = .0145
 	background_sprite.shaded = false
 	add_child(background_sprite)
 
@@ -102,11 +109,11 @@ func build_environment() -> void:
 	ground.add_child(shape_box(Vector3(36, 0.5, 36)))
 	add_child(ground)
 	# Keep the entire firing lane clear. Decorations live behind the target only.
-	for i in range(18):
+	for i in range(10):
 		var tree := Node3D.new()
-		var row := i / 9
-		var column := i % 9
-		tree.position = Vector3(-10.0 + column * 2.5, 0, -5.5 - row * 2.2)
+		var side := -1.0 if i % 2 == 0 else 1.0
+		var depth_row := i / 2
+		tree.position = Vector3(side * (6.2 + float(depth_row % 2) * 1.25), 0, -4.8 - float(depth_row) * 1.15)
 		tree.add_child(mesh_cylinder(0.18, 1.0, Color("9b6028")))
 		var crown := mesh_sphere(0.75, Color.from_hsv(0.28 + (i % 3) * .02, .72, .65 + (i % 2) * .12))
 		crown.position.y = 1.0
@@ -258,7 +265,7 @@ func load_level(index: int) -> void:
 	var tier: int = int(level / 10)
 	var platform_size := Vector3(8.6, 0.55, 6.2)
 	platform_half_extents = Vector2(platform_size.x * .5, platform_size.z * .5)
-	var platform_visual := mesh_box(platform_size, Color("623bc1"))
+	var platform_visual := mesh_box(platform_size, Color("5529bd"))
 	var platform_collision := shape_box(platform_size)
 	platform.add_child(platform_visual)
 	platform.add_child(platform_collision)
@@ -266,12 +273,15 @@ func load_level(index: int) -> void:
 	var trim := mesh_box(platform_size + Vector3(.15, -.38, .15), Color("ffca22"))
 	trim.position.y = .35
 	platform.add_child(trim)
+	var platform_top := mesh_box(Vector3(platform_size.x - .18, .075, platform_size.z - .18), Color("355df5"))
+	platform_top.position.y = .315
+	platform.add_child(platform_top)
 	var pedestal := mesh_cylinder(.34, 1.25, Color("f5a919"))
 	pedestal.position.y = -.85
 	platform.add_child(pedestal)
 
 	generate_level_structure(level)
-	fit_platform_to_structure(tier, platform_visual, platform_collision, trim)
+	fit_platform_to_structure(tier, platform_visual, platform_collision, trim, platform_top)
 	update_hud()
 	var theme_names := THEME_NAMES_KO if korean_locale else THEME_NAMES_EN
 	var template_names := TEMPLATE_NAMES_KO if korean_locale else TEMPLATE_NAMES_EN
@@ -295,7 +305,7 @@ func apply_level_theme(level_index: int) -> void:
 			foliage = foliage.lightened(variation) if variation >= 0.0 else foliage.darkened(-variation)
 			crown.mesh.material = material(foliage)
 
-func fit_platform_to_structure(tier: int, visual: MeshInstance3D, collision: CollisionShape3D, trim: MeshInstance3D) -> void:
+func fit_platform_to_structure(tier: int, visual: MeshInstance3D, collision: CollisionShape3D, trim: MeshInstance3D, top_surface: MeshInstance3D) -> void:
 	var min_x := INF
 	var max_x := -INF
 	var min_z := INF
@@ -324,9 +334,11 @@ func fit_platform_to_structure(tier: int, visual: MeshInstance3D, collision: Col
 	var box_mesh := visual.mesh as BoxMesh
 	var box_shape := collision.shape as BoxShape3D
 	var trim_mesh := trim.mesh as BoxMesh
+	var top_mesh := top_surface.mesh as BoxMesh
 	if box_mesh: box_mesh.size = fitted_size
 	if box_shape: box_shape.size = fitted_size
 	if trim_mesh: trim_mesh.size = Vector3(fitted_size.x + .15, .17, fitted_size.z + .15)
+	if top_mesh: top_mesh.size = Vector3(maxf(.2, fitted_size.x - .18), .075, maxf(.2, fitted_size.z - .18))
 
 func move_limit_for_level(level_index: int) -> int:
 	var tier: int = int(level_index / 10)
@@ -903,16 +915,23 @@ func panel_style(color: Color, radius: int, border := 0, border_color := Color.W
 
 func material(color: Color) -> StandardMaterial3D:
 	var mat := StandardMaterial3D.new()
-	mat.albedo_color = color
-	mat.roughness = .72
+	mat.albedo_color = color.lightened(.035)
+	mat.roughness = .34
+	mat.metallic = .08
+	mat.emission_enabled = true
+	mat.emission = color.darkened(.72)
+	mat.emission_energy_multiplier = .22
 	return mat
 
 func transparent_material(color: Color) -> StandardMaterial3D:
 	var mat := StandardMaterial3D.new()
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	mat.albedo_color = color
-	mat.roughness = .18
-	mat.metallic = .08
+	mat.roughness = .08
+	mat.metallic = .16
+	mat.emission_enabled = true
+	mat.emission = Color(color.r, color.g, color.b, 1.0).darkened(.7)
+	mat.emission_energy_multiplier = .3
 	return mat
 
 func mesh_box(size: Vector3, color: Color) -> MeshInstance3D:
