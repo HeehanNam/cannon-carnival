@@ -236,6 +236,10 @@ func load_level(index: int) -> void:
 	update_cannon()
 
 	platform = AnimatableBody3D.new()
+	# The platform is positioned and rotated directly by this script. Disabling
+	# transform-to-physics sync prevents its pre-fit origin from being restored
+	# on the first physics frame after the structure has been centered.
+	platform.sync_to_physics = false
 	platform.position = Vector3(0, 0, -1.0)
 	var platform_physics := PhysicsMaterial.new()
 	platform_physics.friction = 1.0
