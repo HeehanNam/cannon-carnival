@@ -25,6 +25,7 @@ var projectile: RigidBody3D
 var projectile_timer := 0.0
 var last_shot_input_msec := -1000
 var last_shot_screen_position := Vector2(-1000, -1000)
+var touch_input_detected := false
 var cannon_yaw := 0.0
 var cannon_pitch := deg_to_rad(14.0)
 var stage_root: Node3D
@@ -801,11 +802,19 @@ func toggle_pause() -> void:
 func _input(event: InputEvent) -> void:
 	if state not in [GameState.READY, GameState.AIMING, GameState.PROJECTILE_ACTIVE, GameState.CHECKING]: return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
-		handle_shot_input(event.position)
+		# Mobile browsers may send a delayed compatibility click after a touch.
+		# Once this session has produced real touch input, mouse presses are not
+		# a separate firing source.
+		if touch_input_detected or DisplayServer.is_touchscreen_available():
+			return
+		handle_shot_input(event.position, false)
 	elif event is InputEventScreenTouch and event.pressed:
-		handle_shot_input(event.position)
+		touch_input_detected = true
+		handle_shot_input(event.position, true)
 
-func handle_shot_input(screen_position: Vector2) -> void:
+func handle_shot_input(screen_position: Vector2, from_touch := false) -> void:
+	if not from_touch and touch_input_detected:
+		return
 	var now_msec: int = Time.get_ticks_msec()
 	# Browsers can emit a compatibility mouse press immediately after a touch.
 	# Treat the same near-simultaneous pointer press as one physical tap.

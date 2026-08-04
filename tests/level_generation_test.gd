@@ -72,10 +72,11 @@ func _run() -> void:
 	game.load_level(0)
 	var moves_before_tap: int = game.moves
 	var tap_position := Vector2(270, 430)
-	game.handle_shot_input(tap_position)
-	game.handle_shot_input(tap_position)
+	game.handle_shot_input(tap_position, true)
+	# Simulate the delayed compatibility mouse click emitted by mobile browsers.
+	game.handle_shot_input(tap_position, false)
 	if game.moves != moves_before_tap - 1:
-		push_error("A single touch produced more than one projectile")
+		push_error("A touch plus its compatibility mouse click produced more than one projectile")
 		quit(1)
 		return
 	game.load_level(0)
