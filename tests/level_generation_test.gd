@@ -131,7 +131,7 @@ func platform_fits_blocks(game, tier: int) -> bool:
 	for candidate in get_nodes_in_group("blocks"):
 		var block := candidate as Node3D
 		if block == null or not block.is_inside_tree(): continue
-		var local_position: Vector3 = game.platform.to_local(block.global_position)
+		var local_position: Vector3 = block.get_meta("layout_position", block.position + Vector3(0, 0, 1.0))
 		var footprint: Vector2 = block.get_meta("footprint", Vector2(.82, .82))
 		min_x = minf(min_x, local_position.x - footprint.x * .5)
 		max_x = maxf(max_x, local_position.x + footprint.x * .5)
@@ -139,6 +139,12 @@ func platform_fits_blocks(game, tier: int) -> bool:
 		max_z = maxf(max_z, local_position.z + footprint.y * .5)
 	var margins: Array[float] = [1.0, .85, .7, .55, .4]
 	var expected_margin: float = margins[clampi(tier, 0, 4)]
-	var horizontal_fit: bool = abs((min_x + game.platform_half_extents.x) - expected_margin) < .03 and abs((game.platform_half_extents.x - max_x) - expected_margin) < .03
-	var depth_fit: bool = abs((min_z + game.platform_half_extents.y) - expected_margin) < .03 and abs((game.platform_half_extents.y - max_z) - expected_margin) < .03
-	return horizontal_fit and depth_fit
+	var center_x: float = (min_x + max_x) * .5
+	var center_z: float = (min_z + max_z) * .5
+	var expected_half_x: float = maxf(1.4, (max_x - min_x) * .5 + expected_margin)
+	var expected_half_z: float = maxf(1.3, (max_z - min_z) * .5 + expected_margin)
+	var centered: bool = abs(game.platform.position.x - center_x) < .001 and abs(game.platform.position.z - (-1.0 + center_z)) < .001
+	var correctly_sized: bool = abs(game.platform_half_extents.x - expected_half_x) < .001 and abs(game.platform_half_extents.y - expected_half_z) < .001
+	if not centered or not correctly_sized:
+		print("Platform mismatch: center=", game.platform.position, " expected=", Vector3(center_x, 0, -1.0 + center_z), " half=", game.platform_half_extents, " expected_half=", Vector2(expected_half_x, expected_half_z))
+	return centered and correctly_sized

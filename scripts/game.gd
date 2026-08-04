@@ -287,7 +287,9 @@ func fit_platform_to_structure(tier: int, visual: MeshInstance3D, collision: Col
 	for node in get_tree().get_nodes_in_group("blocks"):
 		var block := node as Node3D
 		if block == null or not block.is_inside_tree(): continue
-		var local_position: Vector3 = platform.to_local(block.global_position)
+		# Use the immutable level-layout coordinate. Transform caches for physics
+		# bodies can lag by a frame while a level is being assembled headlessly.
+		var local_position: Vector3 = block.get_meta("layout_position", block.position + Vector3(0, 0, 1.0))
 		var footprint: Vector2 = block.get_meta("footprint", Vector2(.82, .82))
 		min_x = minf(min_x, local_position.x - footprint.x * .5)
 		max_x = maxf(max_x, local_position.x + footprint.x * .5)
@@ -479,6 +481,7 @@ func add_block(pos: Vector3, size: Vector3, is_target: bool, heavy: bool, reques
 	body.set_meta("block_type", block_type)
 	body.set_meta("durability", 2 if block_type == "ice" else 1)
 	body.set_meta("footprint", Vector2(size.x, size.z))
+	body.set_meta("layout_position", pos)
 	body.add_to_group("blocks")
 	blocks_left += 1
 	build_block_visual(body, size, block_type)
