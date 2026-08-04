@@ -23,6 +23,8 @@ var targets_left := 0
 var blocks_left := 0
 var projectile: RigidBody3D
 var projectile_timer := 0.0
+var last_shot_input_msec := -1000
+var last_shot_screen_position := Vector2(-1000, -1000)
 var cannon_yaw := 0.0
 var cannon_pitch := deg_to_rad(14.0)
 var stage_root: Node3D
@@ -799,9 +801,19 @@ func toggle_pause() -> void:
 func _input(event: InputEvent) -> void:
 	if state not in [GameState.READY, GameState.AIMING, GameState.PROJECTILE_ACTIVE, GameState.CHECKING]: return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
-		select_tower_point(event.position)
+		handle_shot_input(event.position)
 	elif event is InputEventScreenTouch and event.pressed:
-		select_tower_point(event.position)
+		handle_shot_input(event.position)
+
+func handle_shot_input(screen_position: Vector2) -> void:
+	var now_msec: int = Time.get_ticks_msec()
+	# Browsers can emit a compatibility mouse press immediately after a touch.
+	# Treat the same near-simultaneous pointer press as one physical tap.
+	if now_msec - last_shot_input_msec < 120 and screen_position.distance_squared_to(last_shot_screen_position) < 64.0:
+		return
+	last_shot_input_msec = now_msec
+	last_shot_screen_position = screen_position
+	select_tower_point(screen_position)
 
 func select_tower_point(screen_position: Vector2) -> void:
 	var ray_origin := camera.project_ray_origin(screen_position)

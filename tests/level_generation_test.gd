@@ -70,6 +70,15 @@ func _run() -> void:
 		quit(1)
 		return
 	game.load_level(0)
+	var moves_before_tap: int = game.moves
+	var tap_position := Vector2(270, 430)
+	game.handle_shot_input(tap_position)
+	game.handle_shot_input(tap_position)
+	if game.moves != moves_before_tap - 1:
+		push_error("A single touch produced more than one projectile")
+		quit(1)
+		return
+	game.load_level(0)
 	game.state = game.GameState.READY
 	var resume_timer := game.get_tree().create_timer(.01, true, false, true)
 	resume_timer.timeout.connect(game.on_overlay_button)
