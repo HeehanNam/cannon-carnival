@@ -83,8 +83,14 @@ func _run() -> void:
 		return
 	game.on_projectile_hit(game.platform, fired_projectile)
 	await process_frame
+	if not is_instance_valid(fired_projectile) or fired_projectile.freeze or not fired_projectile.get_meta("retirement_scheduled", false):
+		push_error("An impacted projectile did not remain visible and physical before cleanup")
+		quit(1)
+		return
+	game.expire_projectile(fired_projectile)
+	await process_frame
 	if is_instance_valid(fired_projectile):
-		push_error("An impacted projectile remained in the scene")
+		push_error("An expired projectile remained in the scene")
 		quit(1)
 		return
 	game.load_level(0)

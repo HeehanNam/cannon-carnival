@@ -660,19 +660,17 @@ func on_projectile_hit(body: Node, source_projectile: RigidBody3D) -> void:
 func retire_projectile(source_projectile: RigidBody3D) -> void:
 	if not is_instance_valid(source_projectile):
 		return
-	source_projectile.collision_layer = 0
-	source_projectile.collision_mask = 0
-	source_projectile.freeze = true
-	for child in source_projectile.get_children():
-		var visual := child as MeshInstance3D
-		if visual:
-			visual.visible = false
+	if source_projectile.get_meta("retirement_scheduled", false):
+		return
+	# Keep the cannonball visible and physical after impact so it can bounce and
+	# roll naturally. It is removed only after the impact motion has been shown.
+	source_projectile.set_meta("retirement_scheduled", true)
 	if source_projectile == projectile:
 		projectile = null
 		if state == GameState.PROJECTILE_ACTIVE:
 			state = GameState.CHECKING
-			get_tree().create_timer(.8).timeout.connect(finish_check)
-	source_projectile.call_deferred("queue_free")
+			get_tree().create_timer(1.7).timeout.connect(finish_check)
+	get_tree().create_timer(1.6).timeout.connect(expire_projectile.bind(source_projectile))
 
 func expire_projectile(source_projectile: RigidBody3D) -> void:
 	if not is_instance_valid(source_projectile):
