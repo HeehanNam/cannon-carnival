@@ -71,21 +71,22 @@ func build_environment() -> void:
 	environment_data.background_color = SKY_COLORS[0]
 	environment_data.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	environment_data.ambient_light_color = Color("dff6ff")
-	environment_data.ambient_light_energy = 1.05
+	environment_data.ambient_light_energy = .72
 	environment_data.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+	environment_data.tonemap_exposure = .9
 	world.environment = environment_data
 	add_child(world)
 
 	var sun := DirectionalLight3D.new()
 	sun.rotation_degrees = Vector3(-48, -28, 0)
 	sun.light_color = Color("fff2cf")
-	sun.light_energy = 1.38
+	sun.light_energy = 1.05
 	sun.shadow_enabled = true
 	add_child(sun)
 	var fill_light := DirectionalLight3D.new()
 	fill_light.rotation_degrees = Vector3(-28, 145, 0)
 	fill_light.light_color = Color("8fd8ff")
-	fill_light.light_energy = .42
+	fill_light.light_energy = .22
 	fill_light.shadow_enabled = false
 	add_child(fill_light)
 
@@ -232,6 +233,7 @@ func build_ui() -> void:
 	overlay.add_child(overlay_button)
 
 func load_level(index: int) -> void:
+	clear_all_projectiles()
 	level = posmod(index, LEVEL_COUNT)
 	apply_level_theme(level)
 	for child in stage_root.get_children():
@@ -265,15 +267,15 @@ func load_level(index: int) -> void:
 	var tier: int = int(level / 10)
 	var platform_size := Vector3(8.6, 0.55, 6.2)
 	platform_half_extents = Vector2(platform_size.x * .5, platform_size.z * .5)
-	var platform_visual := mesh_box(platform_size, Color("5529bd"))
+	var platform_visual := mesh_box(platform_size, Color("30266f"))
 	var platform_collision := shape_box(platform_size)
 	platform.add_child(platform_visual)
 	platform.add_child(platform_collision)
 	stage_root.add_child(platform)
-	var trim := mesh_box(platform_size + Vector3(.15, -.38, .15), Color("ffca22"))
+	var trim := mesh_box(platform_size + Vector3(.15, -.38, .15), Color("f4b928"))
 	trim.position.y = .35
 	platform.add_child(trim)
-	var platform_top := mesh_box(Vector3(platform_size.x - .18, .075, platform_size.z - .18), Color("355df5"))
+	var platform_top := mesh_box(Vector3(platform_size.x - .18, .075, platform_size.z - .18), Color("176b87"))
 	platform_top.position.y = .315
 	platform.add_child(platform_top)
 	var pedestal := mesh_cylinder(.34, 1.25, Color("f5a919"))
@@ -587,7 +589,7 @@ func level_block_color(hue_offset: float) -> Color:
 	var theme_index: int = clampi(int(level / 10), 0, 4)
 	var base_hues: Array[float] = [.97, .05, .88, .53, .66]
 	var hue: float = fmod(base_hues[theme_index] + hue_offset + float(level % 10) * .018, 1.0)
-	return Color.from_hsv(hue, .72 if theme_index != 3 else .48, .94)
+	return Color.from_hsv(hue, .82 if theme_index != 3 else .58, .82)
 
 func fire_at(target: Vector3) -> void:
 	if state not in [GameState.READY, GameState.AIMING, GameState.PROJECTILE_ACTIVE, GameState.CHECKING] or moves <= 0: return
@@ -613,14 +615,19 @@ func fire_at(target: Vector3) -> void:
 	projectile.linear_velocity = launch_velocity
 	projectile.contact_monitor = true
 	projectile.max_contacts_reported = 8
+	projectile.add_to_group("projectiles")
 	projectile.body_entered.connect(on_projectile_hit.bind(projectile))
 	add_child(projectile)
+	get_tree().create_timer(6.0).timeout.connect(expire_projectile.bind(projectile))
 	shake_amount = max(shake_amount, .025)
 	flash.color.a = .10
 	update_hud()
 	hint_label.text = localized("선택한 지점으로 발사했습니다", "FIRED AT THE SELECTED POINT")
 
 func on_projectile_hit(body: Node, source_projectile: RigidBody3D) -> void:
+	if not is_instance_valid(source_projectile) or source_projectile.get_meta("impact_handled", false):
+		return
+	source_projectile.set_meta("impact_handled", true)
 	shake_amount = max(shake_amount, .055)
 	flash.color.a = .14
 	if body is Node3D:
@@ -635,6 +642,7 @@ func on_projectile_hit(body: Node, source_projectile: RigidBody3D) -> void:
 	if body.has_method("activate_physics"):
 		var impulse := source_projectile.linear_velocity.normalized() * 12.5 if is_instance_valid(source_projectile) else Vector3.ZERO
 		body.activate_physics(impulse)
+	retire_projectile(source_projectile)
 	if not body.is_in_group("blocks"):
 		return
 	var block_type: String = str(body.get_meta("block_type", "barrel"))
@@ -648,6 +656,44 @@ func on_projectile_hit(body: Node, source_projectile: RigidBody3D) -> void:
 			destroy_special_block(body, Color(.72, .96, 1.0, .9), 15)
 	elif block_type == "explosive":
 		explode_block(body)
+
+func retire_projectile(source_projectile: RigidBody3D) -> void:
+	if not is_instance_valid(source_projectile):
+		return
+	source_projectile.collision_layer = 0
+	source_projectile.collision_mask = 0
+	source_projectile.freeze = true
+	for child in source_projectile.get_children():
+		var visual := child as MeshInstance3D
+		if visual:
+			visual.visible = false
+	if source_projectile == projectile:
+		projectile = null
+		if state == GameState.PROJECTILE_ACTIVE:
+			state = GameState.CHECKING
+			get_tree().create_timer(.8).timeout.connect(finish_check)
+	source_projectile.call_deferred("queue_free")
+
+func expire_projectile(source_projectile: RigidBody3D) -> void:
+	if not is_instance_valid(source_projectile):
+		return
+	if source_projectile == projectile:
+		projectile = null
+		if state == GameState.PROJECTILE_ACTIVE:
+			state = GameState.CHECKING
+			get_tree().create_timer(.5).timeout.connect(finish_check)
+	source_projectile.queue_free()
+
+func clear_all_projectiles() -> void:
+	for node in get_tree().get_nodes_in_group("projectiles"):
+		var old_projectile := node as RigidBody3D
+		if old_projectile == null or not is_instance_valid(old_projectile):
+			continue
+		var parent := old_projectile.get_parent()
+		if parent:
+			parent.remove_child(old_projectile)
+		old_projectile.queue_free()
+	projectile = null
 
 func destroy_special_block(body: Node, shard_color: Color, shard_count: int) -> void:
 	if not is_instance_valid(body): return
@@ -713,8 +759,7 @@ func _physics_process(delta: float) -> void:
 	if projectile and is_instance_valid(projectile):
 		projectile_timer += delta
 		if state == GameState.PROJECTILE_ACTIVE and (projectile_timer > 5.5 or projectile.position.y < -3.0 or projectile.linear_velocity.length() < .18 and projectile_timer > 2.0):
-			state = GameState.CHECKING
-			get_tree().create_timer(1.0).timeout.connect(finish_check)
+			expire_projectile(projectile)
 	if flash.color.a > 0: flash.color.a = move_toward(flash.color.a, 0.0, delta * 3.6)
 	if shake_amount > 0:
 		shake_phase += delta * 32.0
@@ -915,12 +960,9 @@ func panel_style(color: Color, radius: int, border := 0, border_color := Color.W
 
 func material(color: Color) -> StandardMaterial3D:
 	var mat := StandardMaterial3D.new()
-	mat.albedo_color = color.lightened(.035)
-	mat.roughness = .34
-	mat.metallic = .08
-	mat.emission_enabled = true
-	mat.emission = color.darkened(.72)
-	mat.emission_energy_multiplier = .22
+	mat.albedo_color = color
+	mat.roughness = .38
+	mat.metallic = .06
 	return mat
 
 func transparent_material(color: Color) -> StandardMaterial3D:
@@ -931,7 +973,7 @@ func transparent_material(color: Color) -> StandardMaterial3D:
 	mat.metallic = .16
 	mat.emission_enabled = true
 	mat.emission = Color(color.r, color.g, color.b, 1.0).darkened(.7)
-	mat.emission_energy_multiplier = .3
+	mat.emission_energy_multiplier = .08
 	return mat
 
 func mesh_box(size: Vector3, color: Color) -> MeshInstance3D:

@@ -81,6 +81,24 @@ func _run() -> void:
 		push_error("Ballistic trajectory does not intersect the exact touched height")
 		quit(1)
 		return
+	game.on_projectile_hit(game.platform, fired_projectile)
+	await process_frame
+	if is_instance_valid(fired_projectile):
+		push_error("An impacted projectile remained in the scene")
+		quit(1)
+		return
+	game.load_level(0)
+	game.fire_at(Vector3(-.5, 1.0, -1.0))
+	game.fire_at(Vector3(.5, 1.0, -1.0))
+	if get_nodes_in_group("projectiles").size() != 2:
+		push_error("Consecutive shots were not tracked as active projectiles")
+		quit(1)
+		return
+	game.load_level(1)
+	if not get_nodes_in_group("projectiles").is_empty():
+		push_error("Loading the next level did not remove old projectiles")
+		quit(1)
+		return
 	game.load_level(0)
 	var moves_before_tap: int = game.moves
 	var tap_position := Vector2(270, 430)
